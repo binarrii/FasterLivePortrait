@@ -8,7 +8,8 @@ models:
     predict_type: "ort"
     model_path: "./checkpoints/liveportrait_onnx/motion_extractor.onnx"
   landmark:
-    name: "LandmarkModel"
+    # name: "LandmarkModel"
+    name: "LandmarkRunner"
     predict_type: "ort"
     model_path: "./checkpoints/liveportrait_onnx/landmark.onnx"
   face_analysis:
