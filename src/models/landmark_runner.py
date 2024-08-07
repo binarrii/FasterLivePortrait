@@ -42,6 +42,7 @@ class LandmarkRunner(BaseModel):
                 ckpt_path, providers=['CPUExecutionProvider'],
                 sess_options=opts
             )
+        self.warmup()
 
         from media_pipe import LMKExtractor
         self.lmk_extractor = LMKExtractor()
