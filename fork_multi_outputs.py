@@ -1,3 +1,4 @@
+import json
 import time
 
 import numpy as np
@@ -20,49 +21,6 @@ st.markdown(
 Fork one input to multiple outputs with different video filters.
 """
 )
-
-
-# VideoFilterType = Literal["noop", "cartoon", "edges", "rotate"]
-
-# def make_video_frame_callback(_type: VideoFilterType):
-#     def callback(frame: av.VideoFrame) -> av.VideoFrame:
-#         img = frame.to_ndarray(format="bgr24")
-#
-#         if _type == "noop":
-#             pass
-#         elif _type == "cartoon":
-#             # prepare color
-#             img_color = cv2.pyrDown(cv2.pyrDown(img))
-#             for _ in range(6):
-#                 img_color = cv2.bilateralFilter(img_color, 9, 9, 7)
-#             img_color = cv2.pyrUp(cv2.pyrUp(img_color))
-#
-#             # prepare edges
-#             img_edges = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-#             img_edges = cv2.adaptiveThreshold(
-#                 cv2.medianBlur(img_edges, 7),
-#                 255,
-#                 cv2.ADAPTIVE_THRESH_MEAN_C,
-#                 cv2.THRESH_BINARY,
-#                 9,
-#                 2,
-#             )
-#             img_edges = cv2.cvtColor(img_edges, cv2.COLOR_GRAY2RGB)
-#
-#             # combine color and edges
-#             img = cv2.bitwise_and(img_color, img_edges)
-#         elif _type == "edges":
-#             # perform edge detection
-#             img = cv2.cvtColor(cv2.Canny(img, 100, 200), cv2.COLOR_GRAY2BGR)
-#         elif _type == "rotate":
-#             # rotate image
-#             rows, cols, _ = img.shape
-#             M = cv2.getRotationMatrix2D((cols / 2, rows / 2), frame.time * 45, 1)
-#             img = cv2.warpAffine(img, M, (cols, rows))
-#
-#         return av.VideoFrame.from_ndarray(img, format="bgr24")
-#
-#     return callback
 
 
 def make_video_frame_callback():
@@ -91,22 +49,9 @@ def make_video_frame_callback():
     return callback
 
 
-COMMON_RTC_CONFIG = {
-    "iceServers": [
-        {
-            "urls": ["stun:118.31.18.64:3478"]
-        },
-        {
-            "urls": ["stun:118.31.72.82:3478"]
-        },
-        {
-            "urls": ["stun:stun.xten.com:3478"]
-        },
-        {
-            "urls": ["stun:stun.l.google.com:19302"]
-        }
-    ]
-}
+with open('ice.json') as f:
+    iceServers = json.load(f)
+    COMMON_RTC_CONFIG = {"iceServers": iceServers}
 
 col_1, col_2 = st.columns(2)
 
