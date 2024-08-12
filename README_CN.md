@@ -6,20 +6,22 @@
 **新增功能：**
 * 通过TensorRT实现在RTX 3090显卡上**实时**运行LivePortrait，速度达到 30+ FPS. 这个速度是实测渲染出一帧的速度，而不仅仅是模型的推理时间。
 * 实现将LivePortrait模型转为Onnx模型，使用onnxruntime-gpu在RTX 3090上的推理速度约为 70ms/帧（～12 FPS），方便跨平台的部署。
-* 无缝支持原生的gradio app, 速度快了好几倍，同时支持对多张人脸的同时推理，一些效果可以看：[pr105](https://github.com/KwaiVGI/LivePortrait/pull/105)
-* 对代码结构进行了重构，不再依赖pytorch，所有的模型用onnx或tensorrt推理。
+* 无缝支持原生的gradio app, 速度快了好几倍，支持多张人脸、Animal模型。
 
 **如果你觉得这个项目有用，帮我点个star吧✨✨**
 
-<video src="https://github.com/user-attachments/assets/170aec12-6fb3-442f-8a2f-26ef91a4d6f9" controls="controls" width="500" height="300">您的浏览器不支持播放该视频！</video>
+<video src="https://github.com/user-attachments/assets/dada0a92-593a-480b-a034-cbcce16e38b9" controls="controls" width="500" height="300">您的浏览器不支持播放该视频！</video>
 
 <video src="https://github.com/user-attachments/assets/716d61a7-41ae-483a-874d-ea1bf345bd1a" controls="controls" width="500" height="300">您的浏览器不支持播放该视频！</video>
 
 **日志**
+- [x] **2024/08/11:** 优化paste_back的速度，修复一些bug。
+  - 用torchgeometry + cuda优化paste_back函数，现在速度提升了很多。示例：`python run.py --src_image assets/examples/source/s39.jpg --dri_video assets/examples/driving/d0.mp4 --cfg configs/trt_infer.yaml --paste_back --animal`
+  - 修复Xpose的ops在一些显卡运行报错的问题等bug。请使用最新的镜像:`docker pull shaoguo/faster_liveportrait:v3`
 - [x] **2024/08/07:** 增加animal模型的支持，同时支持mediapipe模型，现在你不用再担心版权的问题。
   - 增加对animal模型的支持。
     - 需要下载animal的onnx文件：`huggingface-cli download warmshao/FasterLivePortrait --local-dir ./checkpoints`，然后转换成trt文件。
-    - 更新镜像`docker pull shaoguo/faster_liveportrait:v2`
+    - 更新镜像`docker pull shaoguo/faster_liveportrait:v3`, 使用animal模型的示例:`python run.py --src_image assets/examples/source/s39.jpg --dri_video 0 --cfg configs/trt_infer.yaml --realtime --animal`
     - windows系统可以从release页下载最新的[windows 整合包](https://github.com/warmshao/FasterLivePortrait/releases)，解压后使用。
     - 简单的使用教程：
     
@@ -48,7 +50,7 @@
 ### 环境安装
 * 方式1：Docker(推荐），提供了一个镜像，不用再自己安装onnxruntime-gpu和TensorRT。
   * 根据自己的系统安装[docker](https://docs.docker.com/desktop/install/windows-install/)
-  * 下载镜像：`docker pull shaoguo/faster_liveportrait:v2`
+  * 下载镜像：`docker pull shaoguo/faster_liveportrait:v3`
   * 执行命令, `$FasterLivePortrait_ROOT`要替换成你下载的FasterLivePortrait在本地的目录:
   ```shell
   docker run -it --gpus=all \
@@ -56,7 +58,7 @@
   -v $FasterLivePortrait_ROOT:/root/FasterLivePortrait \
   --restart=always \
   -p 9870:9870 \
-  shaoguo/faster_liveportrait:v1 \
+  shaoguo/faster_liveportrait:v3 \
   /bin/bash
   ```
   * 然后可以根据下面Onnxruntime 推理和TensorRT 推理教程进行使用。

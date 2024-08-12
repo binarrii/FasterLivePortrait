@@ -61,24 +61,23 @@ animal_models:
     predict_type: "trt"
     model_path: "./checkpoints/liveportrait_onnx/landmark.trt"
   face_analysis:
-    name: "FaceAnalysisModel"
-    predict_type: "trt"
-    model_path:
-      - "./checkpoints/liveportrait_onnx/retinaface_det_static.trt"
-      - "./checkpoints/liveportrait_onnx/face_2dpose_106_static.trt"
+    name: "MediaPipeFaceModel"
+    predict_type: "mp"
 
 crop_params:
-  src_dsize: 512
+  src_dsize: 256
   src_scale: 2.3
   src_vx_ratio: 0.0
-  src_vy_ratio: -0.125
+  # src_vy_ratio: -0.125
+  src_vy_ratio: 0.0
   dri_scale: 2.2
   dri_vx_ratio: 0.0
-  dri_vy_ratio: -0.1
+  # dri_vy_ratio: -0.1
+  dri_vy_ratio: 0.0
 
 
 infer_params:
-  flag_crop_driving_video: False
+  flag_crop_driving_video: True
   flag_normalize_lip: True
   flag_source_video_eye_retargeting: False
   flag_video_editing_head_rotation: False

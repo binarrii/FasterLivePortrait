@@ -11,9 +11,13 @@ class BaseModel:
     def __init__(self, **kwargs):
         self.kwargs = copy.deepcopy(kwargs)
         self.predictor = get_predictor(**self.kwargs)
-        self.device = torch.cuda.current_device()
-        self.cudaStream = torch.cuda.current_stream().cuda_stream
-        self.predict_type = kwargs.get("predict_type", "trt")
+        if torch.cuda.is_available():
+            self.device = torch.cuda.current_device()
+            self.cudaStream = torch.cuda.current_stream().cuda_stream
+            self.predict_type = kwargs.get("predict_type", "trt")
+        else:
+            self.device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+            self.predict_type = kwargs.get("predict_type", "ort")
 
         if self.predictor is not None:
             self.input_shapes = self.predictor.input_spec()

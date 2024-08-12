@@ -1,8 +1,12 @@
 import json
+import logging
+import threading
 import time
-import traceback
 
+import mediapipe as mp
 import numpy as np
+import torch
+from mediapipe.tasks.python import vision
 from omegaconf import OmegaConf
 
 from src.pipelines.faster_live_portrait_pipeline import FasterLivePortraitPipeline
@@ -18,42 +22,88 @@ import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 st.set_page_config(layout="wide")
-st.markdown(
-    """
-Fork one input to multiple outputs with different video filters.
-"""
-)
 
-infer_cfg = OmegaConf.load("configs/trt_mp_infer.yaml")
+logger = logging.getLogger(__file__)
+lock = threading.Lock()
+
+face_detect_model = "checkpoints/liveportrait_onnx/face_detector.tflite"
+conf_file = "configs/onnx_infer.yaml"
+if torch.cuda.is_available():
+    conf_file = "configs/trt_mp_infer.yaml"
+
+infer_cfg = OmegaConf.load(conf_file)
 infer_cfg.infer_params.flag_pasteback = False
 pipe = FasterLivePortraitPipeline(cfg=infer_cfg)
 
 
 def make_video_frame_callback():
     infer_times = []
+    fail_times = [0]
+    prev_crop = [None]
 
-    def callback(frame: av.VideoFrame) -> av.VideoFrame:
+    def frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
+        # Debug #
+        # print(f"w: {frame.width}, h: {frame.height}")
+        # print(f"format: {frame.format}")
+        # print(f"time_base: {frame.time_base}, time: {frame.time}")
+        # print(f"pts: {frame.pts}")
+        # print(f"dts: {frame.dts}")
+        # print(f"colorspace: {frame.colorspace}")
+        # print(f"color_range: {frame.color_range}")
+        # print(f"pict_type: {frame.pict_type}")
+        # print(f"planes: {len(frame.planes)}")
+        # print(f"is_corrupt: {frame.is_corrupt}")
+        # Debug #
+
         driving_frame = frame.to_ndarray(format="bgr24")
+        with lock:
+            # noinspection PyBroadException
+            try:
+                if not pipe.src_imgs or len(pipe.src_imgs) <= 0:
+                    raise Exception("src image is empty")
+                if not pipe.src_infos or len(pipe.src_infos) <= 0:
+                    raise Exception("src info is empty")
 
-        t0 = time.time()
-        try:
-            dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0], realtime=True)
-            infer_times.append(time.time() - t0)
-            out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
-            print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
-                  f"mean time: {np.mean(infer_times) * 1000} ms/frame")
-        except:
-            out_crop = driving_frame
-            print(traceback.format_exc())
+                t0 = time.time()
+                try:
+                    dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
+                                                           realtime=True)
+                    out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
+                    driving_frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=driving_frame_rgb)
+                    detector = vision.FaceDetector.create_from_model_path(face_detect_model)
+                    faces = detector.detect(mp_image)
+                    if faces is not None and len(faces.detections) > 0:
+                        prev_crop[0] = out_crop
+                        fail_times[0] = 0
+                    else:
+                        prev_crop[0] = None
+                        fail_times[0] = fail_times[0] + 1
+                        if fail_times[0] > 60:
+                            pipe.src_lmk_pre = None
+                            raise Exception("No face detected")
+                finally:
+                    if len(infer_times) > 7200:
+                        infer_times.pop(0)
+                    infer_times.append(time.time() - t0)
+
+                print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
+                      f"mean time: {np.mean(infer_times) * 1000} ms/frame")
+            except Exception as e:
+                logging.warning(f"{repr(e)}")
+                if prev_crop[0] is not None:
+                    out_crop = prev_crop[0]
+                else:
+                    src_img = cv2.cvtColor(pipe.src_imgs[0], cv2.COLOR_BGR2RGB) if len(pipe.src_imgs) > 0 else None
+                    out_crop = src_img if src_img is not None else driving_frame
 
         return av.VideoFrame.from_ndarray(out_crop, format="bgr24")
 
-    return callback
+    return frame_callback
 
 
 with open('ice.json') as f:
-    iceServers = json.load(f)
-    COMMON_RTC_CONFIG = {"iceServers": iceServers}
+    COMMON_RTC_CONFIG = json.load(f)
 
 col_1, col_2, col_3 = st.columns(3)
 
@@ -76,7 +126,8 @@ with col_2:
         np_bytes = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
         cv_image = cv2.imdecode(np_bytes, 1)
         st.image(cv_image, channels="BGR")
-        img_src = pipe.prepare_source(f"/tmp/{file.name}", realtime=True)
+        with lock:
+            pipe.prepare_source(f"/tmp/{file.name}", realtime=True)
 
 with col_3:
     st.header("Output Video")
