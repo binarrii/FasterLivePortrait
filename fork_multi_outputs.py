@@ -24,7 +24,7 @@ Fork one input to multiple outputs with different video filters.
 """
 )
 
-infer_cfg = OmegaConf.load("configs/onnx_infer.yaml")
+infer_cfg = OmegaConf.load("configs/trt_mp_infer.yaml")
 infer_cfg.infer_params.flag_pasteback = False
 pipe = FasterLivePortraitPipeline(cfg=infer_cfg)
 
