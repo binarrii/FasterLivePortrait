@@ -13,7 +13,7 @@ import mediapipe as mp
 import numpy as np
 import torch
 from mediapipe.tasks.python import vision
-from mediapipe.tasks import python
+from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from omegaconf import OmegaConf
 
 from src.pipelines.faster_live_portrait_pipeline import FasterLivePortraitPipeline
@@ -80,7 +80,8 @@ def make_video_frame_callback():
                     if len(infer_times) % 10 == 0:
                         driving_frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
                         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=driving_frame_rgb)
-                        base_options = python.BaseOptions(model_asset_path=face_detect_model)
+                        base_options = mpBaseOptions(delegate=mpBaseOptions.Delegate.CPU,
+                                                     model_asset_path=face_detect_model)
                         options = vision.FaceDetectorOptions(base_options=base_options,
                                                              min_detection_confidence=0.35,
                                                              min_suppression_threshold=0.25)
@@ -104,7 +105,7 @@ def make_video_frame_callback():
                 print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
                       f"mean time: {np.mean(infer_times) * 1000} ms/frame")
             except Exception as e:
-                if len(infer_times) % 60 == 0:
+                if len(infer_times) % 120 == 0:
                     logging.warning(f"{repr(e)}")
                 out_crop = driving_frame
                 # if prev_crop[0] is not None:
