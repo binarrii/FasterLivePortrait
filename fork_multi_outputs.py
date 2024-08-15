@@ -2,6 +2,8 @@ import os
 
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
+os.environ["GLOG_logtostderr"] = "0"
+os.environ["GLOG_minloglevel"] = "2"
 
 import json
 import logging
@@ -12,9 +14,9 @@ import time
 import mediapipe as mp
 import numpy as np
 import torch
+from omegaconf import OmegaConf
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
-from omegaconf import OmegaConf
 
 from src.pipelines.faster_live_portrait_pipeline import FasterLivePortraitPipeline
 
@@ -24,11 +26,15 @@ except ImportError:
     from typing_extensions import Literal  # type: ignore
 
 import av
+
+av.logging.set_level(av.logging.FATAL)
+av.logging.set_libav_level(av.logging.FATAL)
+
 import cv2
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Portrait", layout="wide")
 
 logger = logging.getLogger(__file__)
 lock = threading.Lock()
@@ -42,12 +48,16 @@ infer_cfg = OmegaConf.load(conf_file)
 infer_cfg.infer_params.flag_pasteback = False
 pipe = FasterLivePortraitPipeline(cfg=infer_cfg)
 
+mp_base_options = mpBaseOptions(model_asset_path=face_detect_model)
+face_detect_options = vision.FaceDetectorOptions(
+    base_options=mp_base_options,
+    min_detection_confidence=0.5,
+    min_suppression_threshold=0.3
+)
+
 
 def make_video_frame_callback():
     infer_times = []
-    fail_times = [0]
-
-    # prev_crop = [None]
 
     def frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
         # Debug #
@@ -77,42 +87,27 @@ def make_video_frame_callback():
                     dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
-                    if len(infer_times) % 10 == 0:
-                        driving_frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
-                        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=driving_frame_rgb)
-                        base_options = mpBaseOptions(delegate=mpBaseOptions.Delegate.CPU,
-                                                     model_asset_path=face_detect_model)
-                        options = vision.FaceDetectorOptions(base_options=base_options,
-                                                             min_detection_confidence=0.35,
-                                                             min_suppression_threshold=0.25)
-                        detector = vision.FaceDetector.create_from_options(options)
-                        faces = detector.detect(mp_image)
-                        if faces is not None and len(faces.detections) > 0:
-                            # prev_crop[0] = out_crop
-                            fail_times[0] = 0
-                        else:
-                            # prev_crop[0] = None
-                            fail_times[0] = fail_times[0] + 1
-                            if fail_times[0] > 1:
-                                pipe.src_lmk_pre = None
-                                fail_times[0] = 1
-                                raise Exception("No face detected")
+                    if len(infer_times) % 15 == 0:
+                        frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
+                        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                        faces = vision.FaceDetector.create_from_options(face_detect_options).detect(mp_image)
+                        # noinspection PyUnresolvedReferences
+                        if faces is None or len(faces.detections) <= 0:
+                            pipe.src_lmk_pre = None
+                            logging.warning("No face detected")
+                            raise Exception("No face detected")
                 finally:
                     if len(infer_times) > 7200:
                         infer_times.pop(0)
                     infer_times.append(time.time() - t0)
 
-                print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
-                      f"mean time: {np.mean(infer_times) * 1000} ms/frame")
+                if len(infer_times) % 60 == 0:
+                    print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
+                          f"mean time: {np.mean(infer_times) * 1000} ms/frame")
             except Exception as e:
-                if len(infer_times) % 120 == 0:
+                if len(infer_times) % 60 == 0:
                     logging.warning(f"{repr(e)}")
                 out_crop = driving_frame
-                # if prev_crop[0] is not None:
-                #     out_crop = prev_crop[0]
-                # else:
-                #     src_img = cv2.cvtColor(pipe.src_imgs[0], cv2.COLOR_BGR2RGB) if len(pipe.src_imgs) > 0 else None
-                #     out_crop = src_img if src_img is not None else driving_frame
 
         return av.VideoFrame.from_ndarray(out_crop, format="bgr24")
 
@@ -130,12 +125,13 @@ with col_1:
         key="loopback",
         mode=WebRtcMode.SENDRECV,
         rtc_configuration=COMMON_RTC_CONFIG,
-        media_stream_constraints={"video": True, "audio": False},
+        sendback_audio=False,
+        media_stream_constraints={"video": True, "audio": True},
     )
 
 with col_2:
     st.header("Input Image")
-    file = st.file_uploader("Upload a Image", type=["jpg", "png"])
+    file = st.file_uploader("SrcImage", type=["jpg", "png"], label_visibility="hidden")
     if file is not None:
         raw_bytes = file.read()
         with open(f"/tmp/{file.name}", "wb") as f:
@@ -153,8 +149,9 @@ with col_3:
         key="filter",
         mode=WebRtcMode.RECVONLY,
         video_frame_callback=callback,
-        source_video_track=ctx.input_video_track,
+        source_video_track=ctx.output_video_track,
+        source_audio_track=ctx.output_audio_track,
         desired_playing_state=ctx.state.playing,
         rtc_configuration=COMMON_RTC_CONFIG,
-        media_stream_constraints={"video": True, "audio": False},
+        media_stream_constraints={"video": True, "audio": True},
     )

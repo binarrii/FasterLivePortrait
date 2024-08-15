@@ -11,3 +11,5 @@ from .landmark_model import LandmarkModel
 from .face_analysis_model import FaceAnalysisModel
 from .stitching_model import StitchingModel
 from .mediapipe_face_model import MediaPipeFaceModel
+from .mediapipe_blend_face_model import MediaPipeBlendFaceModel
+from .face_alignment_model import FaceAlignmentModel

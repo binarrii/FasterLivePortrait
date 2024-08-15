@@ -1,13 +1,14 @@
 {
   "iceServers": [
-    {"urls": ["stun:stun.freeswitch.org"]},
     {
-      "urls": ["turn:10.252.25.251:3478?transport=tcp"],
+      "urls": [
+        "turn:livep.w.wtvdev.com:5349?transport=tcp"
+      ],
       "username": "aigc",
-      "credential": "aigc@251"
+      "credential": "aigc@L73"
     }
   ],
-  "iceTransportPolicy": "all",
+  "iceTransportPolicy": "relay",
   "iceCandidatePoolSize": 1,
   "bundlePolicy": "max-bundle"
 }
