@@ -1,5 +1,11 @@
+import os
+
+os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
+os.environ["GLOG_v"] = "0"
+
 import json
 import logging
+
 import threading
 import time
 
@@ -7,6 +13,7 @@ import mediapipe as mp
 import numpy as np
 import torch
 from mediapipe.tasks.python import vision
+from mediapipe.tasks import python
 from omegaconf import OmegaConf
 
 from src.pipelines.faster_live_portrait_pipeline import FasterLivePortraitPipeline
@@ -39,7 +46,8 @@ pipe = FasterLivePortraitPipeline(cfg=infer_cfg)
 def make_video_frame_callback():
     infer_times = []
     fail_times = [0]
-    prev_crop = [None]
+
+    # prev_crop = [None]
 
     def frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
         # Debug #
@@ -69,19 +77,25 @@ def make_video_frame_callback():
                     dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
-                    driving_frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=driving_frame_rgb)
-                    detector = vision.FaceDetector.create_from_model_path(face_detect_model)
-                    faces = detector.detect(mp_image)
-                    if faces is not None and len(faces.detections) > 0:
-                        prev_crop[0] = out_crop
-                        fail_times[0] = 0
-                    else:
-                        prev_crop[0] = None
-                        fail_times[0] = fail_times[0] + 1
-                        if fail_times[0] > 60:
-                            pipe.src_lmk_pre = None
-                            raise Exception("No face detected")
+                    if len(infer_times) % 10 == 0:
+                        driving_frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
+                        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=driving_frame_rgb)
+                        base_options = python.BaseOptions(model_asset_path=face_detect_model)
+                        options = vision.FaceDetectorOptions(base_options=base_options,
+                                                             min_detection_confidence=0.35,
+                                                             min_suppression_threshold=0.25)
+                        detector = vision.FaceDetector.create_from_options(options)
+                        faces = detector.detect(mp_image)
+                        if faces is not None and len(faces.detections) > 0:
+                            # prev_crop[0] = out_crop
+                            fail_times[0] = 0
+                        else:
+                            # prev_crop[0] = None
+                            fail_times[0] = fail_times[0] + 1
+                            if fail_times[0] > 1:
+                                pipe.src_lmk_pre = None
+                                fail_times[0] = 1
+                                raise Exception("No face detected")
                 finally:
                     if len(infer_times) > 7200:
                         infer_times.pop(0)
@@ -90,12 +104,14 @@ def make_video_frame_callback():
                 print(f"inference median time: {np.median(infer_times) * 1000} ms/frame, "
                       f"mean time: {np.mean(infer_times) * 1000} ms/frame")
             except Exception as e:
-                logging.warning(f"{repr(e)}")
-                if prev_crop[0] is not None:
-                    out_crop = prev_crop[0]
-                else:
-                    src_img = cv2.cvtColor(pipe.src_imgs[0], cv2.COLOR_BGR2RGB) if len(pipe.src_imgs) > 0 else None
-                    out_crop = src_img if src_img is not None else driving_frame
+                if len(infer_times) % 60 == 0:
+                    logging.warning(f"{repr(e)}")
+                out_crop = driving_frame
+                # if prev_crop[0] is not None:
+                #     out_crop = prev_crop[0]
+                # else:
+                #     src_img = cv2.cvtColor(pipe.src_imgs[0], cv2.COLOR_BGR2RGB) if len(pipe.src_imgs) > 0 else None
+                #     out_crop = src_img if src_img is not None else driving_frame
 
         return av.VideoFrame.from_ndarray(out_crop, format="bgr24")
 
