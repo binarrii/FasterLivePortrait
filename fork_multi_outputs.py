@@ -89,9 +89,10 @@ def make_video_frame_callback():
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
                     src_img = pipe.src_imgs[0].copy()
                     logger.info(f"src_o: w={src_img.shape[1]}, h={src_img.shape[0]}")
+                    sh, sw = src_img.shape[:2]
                     h, w = out_crop.shape[:2]
                     logger.info(f"out_o: w={w}, h={h}")
-                    src_img = cv2.resize(src_img, (w, int(w / (w / h))))
+                    src_img = cv2.resize(src_img, (w, int(sh * w / sw)))
                     logger.info(f"src_r: w={src_img.shape[1]}, h={src_img.shape[0]}")
                     src_img = src_img[h:src_img.shape[0], 0:w]
                     logger.info(f"src_c: w={src_img.shape[1]}, h={src_img.shape[0]}")
