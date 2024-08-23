@@ -88,12 +88,15 @@ def make_video_frame_callback():
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
                     src_img = pipe.src_imgs[0].copy()
+                    logger.info(f"src_o: w={src_img.shape[1]}, h={src_img.shape[0]}")
                     h, w = out_crop.shape[:2]
-                    logger.info(f"w={w}, h={h}")
+                    logger.info(f"out_o: w={w}, h={h}")
                     src_img = cv2.resize(src_img, (w, int(w / (w / h))))
+                    logger.info(f"src_r: w={src_img.shape[1]}, h={src_img.shape[0]}")
                     src_img = src_img[h:src_img.shape[0], 0:w]
+                    logger.info(f"src_c: w={src_img.shape[1]}, h={src_img.shape[0]}")
                     out_crop = cv2.vconcat([out_crop, src_img])
-                    logger.info(f"w={out_crop.shape[1]}, h={out_crop.shape[0]}")
+                    logger.info(f"out_n: w={out_crop.shape[1]}, h={out_crop.shape[0]}")
                     if len(infer_times) % 15 == 0:
                         frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
                         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
