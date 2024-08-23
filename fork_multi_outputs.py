@@ -87,17 +87,6 @@ def make_video_frame_callback():
                     dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
-                    src_img = pipe.src_imgs[0].copy()
-                    logger.info(f"src_o: w={src_img.shape[1]}, h={src_img.shape[0]}")
-                    sh, sw = src_img.shape[:2]
-                    h, w = out_crop.shape[:2]
-                    logger.info(f"out_o: w={w}, h={h}")
-                    src_img = cv2.resize(src_img, (w, int(sh * w / sw)))
-                    logger.info(f"src_r: w={src_img.shape[1]}, h={src_img.shape[0]}")
-                    src_img = src_img[h:src_img.shape[0], 0:w]
-                    logger.info(f"src_c: w={src_img.shape[1]}, h={src_img.shape[0]}")
-                    out_crop = cv2.vconcat([out_crop, src_img])
-                    logger.info(f"out_n: w={out_crop.shape[1]}, h={out_crop.shape[0]}")
                     if len(infer_times) % 15 == 0:
                         frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
                         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -129,40 +118,42 @@ with open('ice.json') as f:
     COMMON_RTC_CONFIG = json.load(f)
 
 col_1, col_2, col_3 = st.columns(3)
+try:
+    with col_1:
+        st.header("Driving Video")
+        ctx = webrtc_streamer(
+            key="loopback",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=COMMON_RTC_CONFIG,
+            sendback_audio=False,
+            media_stream_constraints={"video": True, "audio": True},
+        )
 
-with col_1:
-    st.header("Driving Video")
-    ctx = webrtc_streamer(
-        key="loopback",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=COMMON_RTC_CONFIG,
-        sendback_audio=False,
-        media_stream_constraints={"video": True, "audio": True},
-    )
+    with col_2:
+        st.header("Input Image")
+        file = st.file_uploader("SrcImage", type=["jpg", "png"], label_visibility="hidden")
+        if file is not None:
+            raw_bytes = file.read()
+            with open(f"/tmp/{file.name}", "wb") as f:
+                f.write(raw_bytes)
+            np_bytes = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
+            cv_image = cv2.imdecode(np_bytes, 1)
+            st.image(cv_image, channels="BGR")
+            with lock:
+                pipe.prepare_source(f"/tmp/{file.name}", realtime=True)
 
-with col_2:
-    st.header("Input Image")
-    file = st.file_uploader("SrcImage", type=["jpg", "png"], label_visibility="hidden")
-    if file is not None:
-        raw_bytes = file.read()
-        with open(f"/tmp/{file.name}", "wb") as f:
-            f.write(raw_bytes)
-        np_bytes = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
-        cv_image = cv2.imdecode(np_bytes, 1)
-        st.image(cv_image, channels="BGR")
-        with lock:
-            pipe.prepare_source(f"/tmp/{file.name}", realtime=True)
-
-with col_3:
-    st.header("Output Video")
-    callback = make_video_frame_callback()
-    webrtc_streamer(
-        key="filter",
-        mode=WebRtcMode.RECVONLY,
-        video_frame_callback=callback,
-        source_video_track=ctx.output_video_track,
-        source_audio_track=ctx.output_audio_track,
-        desired_playing_state=ctx.state.playing,
-        rtc_configuration=COMMON_RTC_CONFIG,
-        media_stream_constraints={"video": True, "audio": True},
-    )
+    with col_3:
+        st.header("Output Video")
+        callback = make_video_frame_callback()
+        webrtc_streamer(
+            key="filter",
+            mode=WebRtcMode.RECVONLY,
+            video_frame_callback=callback,
+            source_video_track=ctx.output_video_track,
+            source_audio_track=ctx.output_audio_track,
+            desired_playing_state=ctx.state.playing,
+            rtc_configuration=COMMON_RTC_CONFIG,
+            media_stream_constraints={"video": True, "audio": True},
+        )
+except Exception as ex:
+    logger.exception(f"{repr(ex)}")
