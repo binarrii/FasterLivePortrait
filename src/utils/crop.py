@@ -359,18 +359,11 @@ def crop_image_by_bbox(img, bbox, lmk=None, dsize=512, angle=None, flag_rot=Fals
             dtype=DTYPE
         )
 
-    s = 1 / s
-    M_o2c_lmk = np.array(
-        [[s, 0, tgt_center[0] - s * src_center[0]],
-         [0, s, tgt_center[1] - s * src_center[1]]],
-        dtype=DTYPE
-    )
-
     # if flag_rot and angle is None:
     # print('angle is None, but flag_rotate is True', style="bold yellow")
 
     img_crop = _transform_img(img, M_o2c, dsize=dsize, borderMode=kwargs.get('borderMode', None))
-    lmk_crop = _transform_pts(lmk, M_o2c_lmk) if lmk is not None else None
+    lmk_crop = _transform_pts(lmk, M_o2c) if lmk is not None else None
 
     M_o2c = np.vstack([M_o2c, np.array([0, 0, 1], dtype=DTYPE)])
     M_c2o = np.linalg.inv(M_o2c)
