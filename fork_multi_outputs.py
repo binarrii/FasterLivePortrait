@@ -87,6 +87,11 @@ def make_video_frame_callback():
                     dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
+                    src_img = pipe.src_imgs[0].copy()
+                    h, w = out_crop.shape[:2]
+                    src_img = cv2.resize(src_img, (w, int(w / (w / h))))
+                    src_img = src_img[h:src_img.shape[0], 0:w]
+                    out_crop = cv2.vconcat([out_crop, src_img])
                     if len(infer_times) % 15 == 0:
                         frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
                         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
