@@ -14,7 +14,7 @@ import torch.nn.functional as F
 import torchgeometry as tgm
 
 DTYPE = np.float32
-CV2_INTERP = cv2.INTER_CUBIC
+CV2_INTERP = cv2.INTER_LINEAR
 
 
 def make_abs_path(fn):
@@ -31,6 +31,8 @@ def _transform_img(img, M, dsize, flags=CV2_INTERP, borderMode=None):
         _dsize = tuple(dsize)
     else:
         _dsize = (dsize, dsize)
+
+    img = cv2.resize(img, (dsize*2, dsize*2), interpolation=cv2.INTER_LINEAR)
 
     if borderMode is not None:
         return cv2.warpAffine(img, M[:2, :], dsize=_dsize, flags=flags, borderMode=borderMode, borderValue=(0, 0, 0))
