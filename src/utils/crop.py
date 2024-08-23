@@ -32,8 +32,6 @@ def _transform_img(img, M, dsize, flags=CV2_INTERP, borderMode=None):
     else:
         _dsize = (dsize, dsize)
 
-    img = cv2.resize(img, (dsize*2, dsize*2), interpolation=cv2.INTER_LINEAR)
-
     if borderMode is not None:
         return cv2.warpAffine(img, M[:2, :], dsize=_dsize, flags=flags, borderMode=borderMode, borderValue=(0, 0, 0))
     else:
