@@ -14,7 +14,7 @@ import torch.nn.functional as F
 import torchgeometry as tgm
 
 DTYPE = np.float32
-CV2_INTERP = cv2.INTER_LINEAR
+CV2_INTERP = cv2.INTER_CUBIC
 
 
 def make_abs_path(fn):
