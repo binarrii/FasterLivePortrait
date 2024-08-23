@@ -301,13 +301,12 @@ class FasterLivePortraitPipeline:
                 lmk = self.model_dict["landmark"].predict(img_rgb, self.src_lmk_pre)
                 self.src_lmk_pre = lmk.copy()
 
-            ret_bbox_obj = parse_bbox_from_landmark(
+            ret_bbox = parse_bbox_from_landmark(
                 lmk,
                 scale=self.cfg.crop_params.dri_scale,
                 vx_ratio_crop_video=self.cfg.crop_params.dri_vx_ratio,
                 vy_ratio=self.cfg.crop_params.dri_vy_ratio,
-            )
-            ret_bbox = ret_bbox_obj["bbox"]
+            )["bbox"]
             global_bbox = [
                 ret_bbox[0, 0],
                 ret_bbox[0, 1],
@@ -319,8 +318,7 @@ class FasterLivePortraitPipeline:
                 global_bbox,
                 lmk=lmk,
                 dsize=kwargs.get("dsize", 512),
-                flag_rot=True,
-                angle=ret_bbox_obj["angle"],
+                flag_rot=False,
                 borderValue=(0, 0, 0),
             )
             lmk_crop = ret_dct["lmk_crop"]
