@@ -3,14 +3,13 @@
 """
 cropping function and the related preprocess functions for cropping
 """
-import pdb
 
-import numpy as np
 import os.path as osp
-from math import sin, cos, acos, degrees
+from math import sin, cos, acos, degrees, log2
+
 import cv2
+import numpy as np
 import torch
-import torch.nn.functional as F
 import torchgeometry as tgm
 
 DTYPE = np.float32
@@ -341,7 +340,7 @@ def crop_image_by_bbox(img, bbox, lmk=None, dsize=512, angle=None, flag_rot=Fals
     src_center = np.array([(left + right) / 2, (top + bot) / 2], dtype=DTYPE)
     tgt_center = np.array([dsize / 2, dsize / 2], dtype=DTYPE)
 
-    s = dsize / size  # scale
+    s = dsize / size + log2(size / dsize)
     if flag_rot and angle is not None:
         costheta, sintheta = cos(angle), sin(angle)
         cx, cy = src_center[0], src_center[1]  # ori center
