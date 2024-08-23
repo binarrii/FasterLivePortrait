@@ -359,7 +359,7 @@ def crop_image_by_bbox(img, bbox, lmk=None, dsize=512, angle=None, flag_rot=Fals
             dtype=DTYPE
         )
 
-    s = 1
+    s = 1 / s
     M_o2c_lmk = np.array(
         [[s, 0, tgt_center[0] - s * src_center[0]],
          [0, s, tgt_center[1] - s * src_center[1]]],
