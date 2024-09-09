@@ -1,5 +1,7 @@
 import os
 
+# from aiortc import RTCSessionDescription
+
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
 os.environ["GLOG_logtostderr"] = "0"
@@ -33,6 +35,8 @@ av.logging.set_libav_level(av.logging.FATAL)
 import cv2
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
+
+# from aiohttp import web
 
 st.set_page_config(page_title="Portrait", layout="wide")
 
@@ -126,7 +130,7 @@ try:
             mode=WebRtcMode.SENDRECV,
             rtc_configuration=COMMON_RTC_CONFIG,
             sendback_audio=False,
-            media_stream_constraints={"video": True, "audio": True},
+            media_stream_constraints={"video": True, "audio": False},
         )
 
     with col_2:
@@ -153,7 +157,51 @@ try:
             source_audio_track=ctx.output_audio_track,
             desired_playing_state=ctx.state.playing,
             rtc_configuration=COMMON_RTC_CONFIG,
-            media_stream_constraints={"video": True, "audio": True},
+            media_stream_constraints={"video": True, "audio": False},
         )
 except Exception as ex:
     logger.exception(f"{repr(ex)}")
+
+# if not hasattr(st, 'already_started_server'):
+#     # Hack the fact that Python modules (like st) only load once to
+#     # keep track of whether this file already ran.
+#     st.already_started_server = True
+#
+#     ROOT = os.path.dirname(__file__)
+#
+#
+#     async def index(request):
+#         content = open(os.path.join(ROOT, "index.html"), "r").read()
+#         return web.Response(content_type="text/html", text=content)
+#
+#
+#     async def javascript(request):
+#         content = open(os.path.join(ROOT, "client.js"), "r").read()
+#         return web.Response(content_type="application/javascript", text=content)
+#
+#
+#     async def on_shutdown(app):
+#         await ctx._get_worker().pc.close()
+#
+#
+#     async def offer(request):
+#         params = await request.json()
+#         offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+#         pc = ctx._get_worker().pc
+#         await pc.setRemoteDescription(offer)
+#         answer = await pc.createAnswer()
+#         await pc.setLocalDescription(answer)
+#         return web.Response(
+#             content_type="application/json",
+#             text=json.dumps(
+#                 {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+#             ),
+#         )
+#
+#
+#     app = web.Application()
+#     app.on_shutdown.append(on_shutdown)
+#     app.router.add_get("/", index)
+#     app.router.add_get("/client.js", javascript)
+#     app.router.add_post("/offer", offer)
+#     web.run_app(app, access_log=None, host="0.0.0.0", port=8503)
