@@ -171,7 +171,7 @@ class FasterLivePortraitPipeline:
                     if self.is_animal:
                         ret_dct["lmk_crop"] = lmk
                     else:
-                        lmk = self.model_dict["landmark"].predict(img_rgb, lmk)
+                        # lmk = self.model_dict["landmark"].predict(img_rgb, lmk)
                         ret_dct["lmk_crop"] = lmk
                         ret_dct["lmk_crop_256x256"] = ret_dct["lmk_crop"] * 256 / self.cfg.crop_params.src_dsize
 
@@ -289,17 +289,19 @@ class FasterLivePortraitPipeline:
         realtime = kwargs.get("realtime", False)
 
         if self.cfg.infer_params.flag_crop_driving_video:
-            if self.src_lmk_pre is None:
-                src_face = self.model_dict["face_analysis"].predict(img_bgr)
-                if len(src_face) == 0:
-                    self.src_lmk_pre = None
-                    return None, None, None
-                lmk = src_face[0]
-                lmk = self.model_dict["landmark"].predict(img_rgb, lmk)
-                self.src_lmk_pre = lmk.copy()
-            else:
-                lmk = self.model_dict["landmark"].predict(img_rgb, self.src_lmk_pre)
-                self.src_lmk_pre = lmk.copy()
+            # if self.src_lmk_pre is None:
+            src_face = self.model_dict["face_analysis"].predict(img_bgr)
+            # if len(src_face) == 0:
+            #     self.src_lmk_pre = None
+            #     return None, None, None
+            lmk = src_face[0] if len(src_face) > 0 else self.src_lmk_pre
+            # lmk = self.model_dict["landmark"].predict(img_rgb, lmk)
+            if lmk is None:
+                return None, None, None
+            self.src_lmk_pre = lmk.copy()
+            # else:
+            #     lmk = self.model_dict["landmark"].predict(img_rgb, self.src_lmk_pre)
+            #     self.src_lmk_pre = lmk.copy()
 
             ret_bbox = parse_bbox_from_landmark(
                 lmk,
