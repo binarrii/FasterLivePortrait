@@ -290,8 +290,7 @@ class FasterLivePortraitPipeline:
 
         if self.cfg.infer_params.flag_crop_driving_video:
             if self.src_lmk_pre is None:
-                # src_face = self.model_dict["face_analysis"].predict(img_bgr)
-                src_face = self.model_dict["landmark"].predict(img_rgb, None)
+                src_face = self.model_dict["face_analysis"].predict(img_bgr)
                 if len(src_face) == 0:
                     self.src_lmk_pre = None
                     return None, None, None
