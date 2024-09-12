@@ -129,6 +129,7 @@ def make_video_frame_callback():
                     dri_crop, out_crop, out_org = pipe.run(driving_frame, pipe.src_imgs[0], pipe.src_infos[0],
                                                            realtime=True)
                     out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
+                    out_crop = stiching(cv_image, out_crop)
                     if len(infer_times) % 15 == 0:
                         frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
                         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -150,8 +151,6 @@ def make_video_frame_callback():
                 if len(infer_times) % 60 == 0:
                     logging.warning(f"{repr(e)}")
                 out_crop = driving_frame
-
-            out_crop = stiching(cv_image, out_crop)
 
         return av.VideoFrame.from_ndarray(out_crop, format="bgr24")
 
