@@ -83,7 +83,6 @@ def make_video_frame_callback():
         for m, n in matches:
             if m.distance < 0.7 * n.distance:
                 good_matches.append(m)
-        print(f"{len(good_matches)}")
 
         src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
