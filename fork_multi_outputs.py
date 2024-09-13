@@ -158,7 +158,7 @@ def make_video_frame_callback():
 with open('ice.json') as f:
     COMMON_RTC_CONFIG = json.load(f)
 
-col_1, col_2 = st.columns(2)
+col_1, col_2 = st.columns([.3, .7])
 try:
     with col_1:
         st.header("Driving Video")
