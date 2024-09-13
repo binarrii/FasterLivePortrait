@@ -76,8 +76,8 @@ def make_video_frame_callback():
         head_gpu.upload(head_gray)
         body_gpu.upload(body_gray)
 
-        keypoints1, descriptors1 = orb.detectAndComputeAsync(head_gpu, None)
-        keypoints2, descriptors2 = orb.detectAndComputeAsync(body_gpu, None)
+        keypoints1, descriptors1 = orb.detectAndCompute(head_gpu, None)
+        keypoints2, descriptors2 = orb.detectAndCompute(body_gpu, None)
 
         descriptors1 = descriptors1.download()
         descriptors2 = descriptors2.download()
