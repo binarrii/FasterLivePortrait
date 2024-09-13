@@ -193,7 +193,7 @@ try:
             source_audio_track=ctx.output_audio_track,
             desired_playing_state=ctx.state.playing,
             rtc_configuration=COMMON_RTC_CONFIG,
-            media_stream_constraints={"video": {"height": 960,}, "audio": False},
+            media_stream_constraints={"video": {"height": 1280}, "audio": False},
         )
 except Exception as ex:
     logger.exception(f"{repr(ex)}")
