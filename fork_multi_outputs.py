@@ -159,7 +159,7 @@ def make_video_frame_callback():
 with open('ice.json') as f:
     COMMON_RTC_CONFIG = json.load(f)
 
-col_1, col_2, col_3 = st.columns(3)
+col_1, col_2 = st.columns(2)
 try:
     with col_1:
         st.header("Driving Video")
@@ -170,8 +170,6 @@ try:
             sendback_audio=False,
             media_stream_constraints={"video": True, "audio": False},
         )
-
-    with col_2:
         st.header("Input Image")
         file = st.file_uploader("SrcImage", type=["jpg", "png"], label_visibility="hidden")
         if file is not None:
@@ -184,7 +182,7 @@ try:
             with lock:
                 pipe.prepare_source(f"/tmp/{file.name}", realtime=True)
 
-    with col_3:
+    with col_2:
         st.header("Output Video")
         callback = make_video_frame_callback()
         webrtc_streamer(
