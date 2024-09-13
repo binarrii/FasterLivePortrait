@@ -65,6 +65,7 @@ def make_video_frame_callback():
 
     def stiching(src_img, out_crop):
         head, body = out_crop, src_img
+        print(f"{head.shape}, {body.shape}")
 
         head_gray = cv2.cvtColor(head, cv2.COLOR_BGR2GRAY)
         body_gray = cv2.cvtColor(body, cv2.COLOR_BGR2GRAY)
