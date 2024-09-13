@@ -71,8 +71,8 @@ def make_video_frame_callback():
         body_gray = cv2.cvtColor(body, cv2.COLOR_BGR2GRAY)
 
         orb = cv2.ORB.create()
-        head_gpu = cv2.cuda_GpuMat()
-        body_gpu = cv2.cuda_GpuMat()
+        head_gpu = cv2.cuda.GpuMat()
+        body_gpu = cv2.cuda.GpuMat()
         head_gpu.upload(head_gray)
         body_gpu.upload(body_gray)
 
