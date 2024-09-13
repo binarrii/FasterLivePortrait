@@ -170,7 +170,7 @@ try:
             sendback_audio=False,
             media_stream_constraints={"video": True, "audio": False},
         )
-        st.header("Input Image")
+        # st.header("Input Image")
         file = st.file_uploader("SrcImage", type=["jpg", "png"], label_visibility="hidden")
         if file is not None:
             raw_bytes = file.read()
@@ -193,7 +193,7 @@ try:
             source_audio_track=ctx.output_audio_track,
             desired_playing_state=ctx.state.playing,
             rtc_configuration=COMMON_RTC_CONFIG,
-            media_stream_constraints={"video": True, "audio": False},
+            media_stream_constraints={"video": {"height": 960,}, "audio": False},
         )
 except Exception as ex:
     logger.exception(f"{repr(ex)}")
