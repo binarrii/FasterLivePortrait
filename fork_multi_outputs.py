@@ -82,7 +82,6 @@ def make_video_frame_callback():
         for m, n in matches:
             if m.distance < 0.7 * n.distance:
                 good_matches.append(m)
-        print(f"{len(good_matches)}")
 
         src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
         dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
@@ -185,7 +184,7 @@ try:
     with col_2:
         st.header("Output Video")
         callback = make_video_frame_callback()
-        webrtc_streamer(
+        ctxo = webrtc_streamer(
             key="filter",
             mode=WebRtcMode.RECVONLY,
             video_frame_callback=callback,
@@ -193,7 +192,12 @@ try:
             source_audio_track=ctx.output_audio_track,
             desired_playing_state=ctx.state.playing,
             rtc_configuration=COMMON_RTC_CONFIG,
-            media_stream_constraints={"video": {"height": 1280}, "audio": False},
+            media_stream_constraints={
+                "video": {
+                    "width": {"min": 960, "ideal": 960, "max": 960},
+                    "height": {"min": 1920, "ideal": 1920, "max": 1920},
+                },
+                "audio": False},
         )
 except Exception as ex:
     logger.exception(f"{repr(ex)}")
