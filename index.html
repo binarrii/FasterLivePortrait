@@ -76,6 +76,7 @@
             .then((buf) => {
                 if (videoSourceBuffer && !videoSourceBuffer.updating) {
                     videoSourceBuffer.appendBuffer(buf);
+                    console.log('SourceBuffer appended');
                 }
             })
             .catch((err) => {
