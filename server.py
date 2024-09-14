@@ -147,7 +147,7 @@ async def ws(websocket: WebSocket):
                 print(f"bytes sent {len(snd_bytes)}")
 
             time_taken = time.time() - t0
-            print(f"time taken: {time_taken} ms")
+            print(f"time taken: {time_taken * 1000} ms")
         except WebSocketDisconnect:
             print("WebSocket disconnected")
         except EOFError:
