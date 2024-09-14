@@ -7,12 +7,10 @@
 </head>
 <body>
 <video id="video" width="640" height="480" autoplay></video>
-<video id="player" controls autoplay></video>
+<video id="player" controls autoplay muted></video>
 <canvas id="canvas" style="display: none;"></canvas>
+<img id="frame" src="">
 <script>
-    const video = document.getElementById('video');
-    const socket = new WebSocket('ws://192.168.1.73:8080/ws');
-
     navigator.mediaDevices.getUserMedia({video: true})
         .then((stream) => {
             // 将视频流显示在视频元素中
@@ -28,18 +26,27 @@
 
             // 定期抓取帧并发送到 WebSocket
             const captureFrame = () => {
-                imageCapture.grabFrame().then((imageBitmap) => {
-                    // 将帧转换为Blob格式发送
-                    canvas.width = imageBitmap.width;
-                    canvas.height = imageBitmap.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(imageBitmap, 0, 0);
-                    canvas.toBlob((blob) => {
-                        if (socket.readyState === WebSocket.OPEN) {
-                            socket.send(blob);
+                imageCapture.grabFrame()
+                    .then((imageBitmap) => {
+                        try {
+                            // 将帧转换为Blob格式发送
+                            canvas.width = imageBitmap.width;
+                            canvas.height = imageBitmap.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(imageBitmap, 0, 0);
+                            canvas.toBlob((blob) => {
+                                if (socket.readyState === WebSocket.OPEN) {
+                                    socket.send(blob);
+                                }
+                            });
+                        } catch (e) {
+                            console.log(e);
                         }
+                    })
+                    .catch((err) => {
+                        if (err) console.error(err)
+                        // else console.error("unknown error")
                     });
-                });
             };
 
             setInterval(captureFrame, 25);
@@ -51,32 +58,40 @@
     const player = document.getElementById('player');
     const mediaSource = new MediaSource();
     player.src = URL.createObjectURL(mediaSource);
-
     let videoSourceBuffer;
-    const queue = [];
-    const appendToSourceBuffer = function () {
-        if (queue.length > 0 && !videoSourceBuffer.updating) {
-            // 将队列中的数据块追加到 SourceBuffer
-            const chunk = queue.shift();
-            videoSourceBuffer.appendBuffer(chunk);
-        }
-    }
+    mediaSource.addEventListener('sourceopen', function () {
+        // videoSourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.4d002a"');
+        videoSourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs=vp9');
+    }, false);
+    mediaSource.addEventListener('sourceended', function (e) {
+        console.warn('MediaSource ended');
+    }, false);
+    mediaSource.addEventListener('sourceclosed', function (e) {
+        console.warn('MediaSource closed');
+    }, false);
 
-    socket.onmessage = (event) => {
-        // 当接收到WebSocket数据时，将其加入队列
-        queue.push(event.data);
-        if (videoSourceBuffer && !videoSourceBuffer.updating) {
-            appendToSourceBuffer();
-        }
+    const appendToSourceBuffer = (blob) => {
+        // 将队列中的数据块追加到 SourceBuffer
+        blob.arrayBuffer()
+            .then((buf) => {
+                if (videoSourceBuffer && !videoSourceBuffer.updating) {
+                    videoSourceBuffer.appendBuffer(buf);
+                }
+            })
+            .catch((err) => {
+                if (err) console.error(err);
+            });
     };
 
-    mediaSource.addEventListener('sourceopen', () => {
-        // 创建 SourceBuffer，指定视频格式
-        videoSourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
-        if (queue.length > 0) {
-            appendToSourceBuffer();
+    const socket = new WebSocket('ws://localhost:8080/ws');
+
+    socket.onmessage = (event) => {
+        console.log(`frame received: ${event.data.size}`);
+        if (mediaSource.readyState !== 'open') return;
+        if (videoSourceBuffer && !videoSourceBuffer.updating) {
+            appendToSourceBuffer(event.data);
         }
-    });
+    };
 
     socket.onopen = function () {
         console.log('WebSocket connection established');

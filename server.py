@@ -1,6 +1,7 @@
 import os
 
 from starlette.responses import FileResponse
+from starlette.websockets import WebSocketDisconnect
 
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
@@ -116,16 +117,40 @@ async def index():
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
     await websocket.accept()
-    codec = av.CodecContext.create('h264', 'w')
     while True:
         try:
-            raw_bytes = await websocket.receive_bytes()
-            frame = av.VideoFrame.from_image(Image.open(io.BytesIO(raw_bytes)))
+            t0 = time.time()
+
+            rcv_bytes = await websocket.receive_bytes()
+            print(f"bytes received {len(rcv_bytes)}")
+            if len(rcv_bytes) <= 0:
+                continue
+            frame = av.VideoFrame.from_image(Image.open(io.BytesIO(rcv_bytes)))
             frame = hand_frame(frame)
-            packet = codec.encode(frame)
-            if packet:
-                await websocket.send(packet.to_bytes())
-            print(frame.width, frame.height)
+
+            codec = av.CodecContext.create('vp9', 'w')
+            codec.width = 512
+            codec.height = 512
+            codec.pix_fmt = 'yuv420p'
+            codec.options = {'preset': 'fast'}
+
+            _ = codec.encode(frame)
+            packets = codec.encode(None)
+            if len(packets) == 0:
+                print("no packets, frame encode failed")
+                continue
+
+            for packet in packets:
+                snd_bytes = bytes(packet)
+                await websocket.send_bytes(snd_bytes)
+                print(f"bytes sent {len(snd_bytes)}")
+
+            time_taken = time.time() - t0
+            print(f"time taken: {time_taken} ms")
+        except WebSocketDisconnect:
+            print("WebSocket disconnected")
+        except EOFError:
+            print("EOF")
         except Exception as e:
             print(f"{repr(e)}")
 
