@@ -70,10 +70,10 @@ def make_video_frame_callback():
         head_gray = cv2.cvtColor(head, cv2.COLOR_BGR2GRAY)
         body_gray = cv2.cvtColor(body, cv2.COLOR_BGR2GRAY)
 
-        orb = cv2.ORB.create()
+        orb = cv2.cuda.ORB_create()
         head_gpu = cv2.cuda.GpuMat()
-        body_gpu = cv2.cuda.GpuMat()
         head_gpu.upload(head_gray)
+        body_gpu = cv2.cuda.GpuMat()
         body_gpu.upload(body_gray)
 
         keypoints1, descriptors1 = orb.detectAndCompute(head_gpu, None)

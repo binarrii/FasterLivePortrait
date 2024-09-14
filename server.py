@@ -68,6 +68,7 @@ def hand_frame(frame: av.VideoFrame) -> av.VideoFrame:
     # Debug #
 
     driving_frame = frame.to_ndarray(format="bgr24")
+    print(f"driving_frame: {driving_frame.shape}")
     # noinspection PyBroadException
     try:
         if not pipe.src_imgs or len(pipe.src_imgs) <= 0:
