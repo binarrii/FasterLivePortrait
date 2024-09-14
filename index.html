@@ -71,7 +71,8 @@
 
     const appendToSourceBuffer = (blob) => {
         // 将队列中的数据块追加到 SourceBuffer
-        blob.arrayBuffer()
+        new Blob([blob], {type: 'video/webm'})
+            .arrayBuffer()
             .then((buf) => {
                 if (videoSourceBuffer && !videoSourceBuffer.updating) {
                     videoSourceBuffer.appendBuffer(buf);
