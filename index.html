@@ -75,7 +75,7 @@
             .arrayBuffer()
             .then((buf) => {
                 if (videoSourceBuffer && !videoSourceBuffer.updating) {
-                    videoSourceBuffer.appendBuffer(buf);
+                    videoSourceBuffer.appendBuffer(new Uint8Array(buf));
                     console.log('SourceBuffer appended');
                 }
             })
