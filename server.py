@@ -1,5 +1,7 @@
 import os
 
+from starlette.responses import FileResponse
+
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
 os.environ["GLOG_logtostderr"] = "0"
@@ -104,6 +106,11 @@ def hand_frame(frame: av.VideoFrame) -> av.VideoFrame:
 
 
 app = FastAPI()
+
+
+@app.get("/")
+async def index():
+    return FileResponse('index.html')
 
 
 @app.websocket("/ws")
