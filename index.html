@@ -11,7 +11,7 @@
 <canvas id="canvas" style="display: none;"></canvas>
 <script>
     const video = document.getElementById('video');
-    const socket = new WebSocket('ws://localhost:8080/ws');
+    const socket = new WebSocket('ws://192.168.1.73:8080/ws');
 
     navigator.mediaDevices.getUserMedia({video: true})
         .then((stream) => {

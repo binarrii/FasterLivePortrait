@@ -132,69 +132,8 @@ async def ws(websocket: WebSocket):
 
 if __name__ == "__main__":
     try:
-        uvicorn.run(app, host="localhost", port=8080, workers=1)
+        uvicorn.run(app, host="0.0.0.0", port=8080, workers=1)
     except Exception as e:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGTERM)
         exit(0)
-
-# async def video_stream(websocket):
-#     async for message in websocket:
-#         if len(message) <= 1:
-#             continue
-#         try:
-#             packet = av.Packet(message)
-#             if packet:
-#                 container.mux(packet)
-#             print(f"{len(message)}")
-#         except Exception as e:
-#             print(f"Error: {e}")
-#
-#     container.close()
-#
-#
-# server = websockets.serve(video_stream, 'localhost', 8080)
-#
-# asyncio.get_event_loop().run_until_complete(server)
-# asyncio.get_event_loop().run_forever()
-
-
-# import av
-#
-# def encode(frame):
-#     try:
-#         pkt = ovstream.encode(frame)
-#     except Exception:
-#         return False
-#     if pkt is not None:
-#         try:
-#             output.mux(pkt)
-#         except Exception:
-#             print('mux failed: ' + str(pkt))
-#     return True
-#
-# input_file = 'rtsp://192.168.10.210:554/Streaming/Channels/102?transportmode=unicast'
-# container = av.open(input_file)
-# video_st = container.streams.video[0]
-# output = av.open('archive.mp4', 'w')
-# ovstream = output.add_stream('libx264', video_st.rate)
-# ovstream.pix_fmt = 'yuv420p'
-# ovstream.width = video_st.width
-# ovstream.height = video_st.height
-#
-# counter = 0
-# for packet in container.demux((video_st,)):
-#     for frame in packet.decode():
-#         new_frame = av.VideoFrame(width=frame.width, height=frame.height, format=frame.format.name)
-#         for i in range(len(frame.planes)):
-#             new_frame.planes[i].update(frame.planes[i])
-#         encode(new_frame)
-#         counter += 1
-#         print("Frames encoded:", counter)
-#     if counter > 200:
-#         break
-#
-# while True:
-#     if not encode(None):
-#         break
-# output.close()
