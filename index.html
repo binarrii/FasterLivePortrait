@@ -6,10 +6,9 @@
     <title>Webcam Stream</title>
 </head>
 <body>
-<video id="video" width="640" height="480" autoplay></video>
-<video id="player" controls autoplay muted></video>
+<video id="video" width="640" height="480" controls autoplay muted></video>
+<video id="player" width="640" height="480" controls autoplay muted></video>
 <canvas id="canvas" style="display: none;"></canvas>
-<img id="frame" src="">
 <script>
     navigator.mediaDevices.getUserMedia({video: true})
         .then((stream) => {
