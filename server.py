@@ -40,7 +40,7 @@ if torch.cuda.is_available():
 infer_cfg = OmegaConf.load(conf_file)
 infer_cfg.infer_params.flag_pasteback = False
 pipe = FasterLivePortraitPipeline(cfg=infer_cfg)
-pipe.prepare_source("/tmp/aijia.png", realtime=True)
+pipe.prepare_source("aijia.png", realtime=True)
 
 mp_base_options = mpBaseOptions(model_asset_path=face_detect_model)
 face_detect_options = vision.FaceDetectorOptions(
