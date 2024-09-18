@@ -94,11 +94,11 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
         return buffer.tobytes()
 
 
-pool: queue.Queue[VideoFramePipeline] = queue.Queue(6)
+pool: queue.Queue[VideoFramePipeline] = queue.Queue(1)
 for i in range(pool.maxsize):
     pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
 
-workers = multiprocessing.Pool(processes=6)
+workers = multiprocessing.Pool(processes=1)
 
 terminate = False
 
