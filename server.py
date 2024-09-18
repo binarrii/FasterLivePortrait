@@ -1,6 +1,4 @@
-import asyncio
 import os
-from concurrent.futures import ProcessPoolExecutor
 
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
@@ -10,6 +8,7 @@ os.environ["GLOG_minloglevel"] = "2"
 from starlette.responses import FileResponse
 from starlette.websockets import WebSocketDisconnect
 
+import asyncio
 import logging
 import time
 import cv2
@@ -53,6 +52,7 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def handle_frame(self, frame: bytes) -> bytes:
         # noinspection PyBroadException
+        driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
         try:
             if not self.src_imgs or len(self.src_imgs) <= 0:
                 raise Exception("src image is empty")
@@ -61,7 +61,6 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
 
             t0 = time.time()
             try:
-                driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
                 dri_crop, out_crop, out_org = self.run(driving_frame,
                                                        self.src_imgs[0],
                                                        self.src_infos[0],
@@ -95,11 +94,9 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
         return buffer.tobytes()
 
 
-pool: queue.Queue[VideoFramePipeline] = queue.Queue(1)
+pool: queue.Queue[VideoFramePipeline] = queue.Queue(6)
 for i in range(pool.maxsize):
     pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
-
-executor = ProcessPoolExecutor(max_workers=1)
 
 terminate = False
 
@@ -123,8 +120,8 @@ class ConnectionManager:
     def disconnect(self, client_id: str):
         del self.active_connections[client_id]
 
-    def send_bytes(self, client_id: str, message: bytes):
-        asyncio.ensure_future(self.active_connections[client_id].send_bytes(message))
+    async def send_bytes(self, client_id: str, message: bytes):
+        await self.active_connections[client_id].send_bytes(message)
 
 
 connection_manager = ConnectionManager()
@@ -139,14 +136,14 @@ async def index():
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket, client_id: str):
-    def handle_ws_message(client: str, message: bytes, pipe: VideoFramePipeline):
-        print(f"bytes received {len(message)}")
+    async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
+        print(f"bytes received {len(data)}")
         try:
             t0 = time.time()
-            frame = pipe.handle_frame(message)
+            frame = pipe.handle_frame(data)
             print(f"time taken: {(time.time() - t0) * 1000}ms")
 
-            connection_manager.send_bytes(client, frame)
+            await connection_manager.send_bytes(client, frame)
             print(f"bytes sent {len(frame)}")
         except WebSocketDisconnect:
             print("WebSocket disconnected")
@@ -155,12 +152,12 @@ async def ws(websocket: WebSocket, client_id: str):
             traceback.print_stack()
 
     pipeline = pool.get()
-    global terminate, executor
     try:
         await connection_manager.connect(client_id, websocket)
+        global terminate
         while not terminate:
-            data = await websocket.receive_bytes()
-            executor.submit(handle_ws_message, client_id, data, pipeline)
+            message = await websocket.receive_bytes()
+            asyncio.ensure_future(handle_ws_message(client_id, message, pipeline))
     except WebSocketDisconnect:
         print("WebSocket disconnected")
         connection_manager.disconnect(client_id)
@@ -170,7 +167,7 @@ async def ws(websocket: WebSocket, client_id: str):
 
 if __name__ == "__main__":
     try:
-        uvicorn.run(app, host="0.0.0.0", port=9090, workers=1)
+        uvicorn.run(app, host="0.0.0.0", port=8080, workers=1)
     except Exception as e:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGTERM)
