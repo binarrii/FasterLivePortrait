@@ -3,100 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webcam Stream</title>
+    <title>Portrait</title>
 </head>
 <body>
-<video id="video" width="640" height="480" controls autoplay muted></video>
-<video id="player" width="640" height="480" controls autoplay muted></video>
-<canvas id="canvas" style="display: none;"></canvas>
-<script>
-    navigator.mediaDevices.getUserMedia({video: true})
-        .then((stream) => {
-            // 将视频流显示在视频元素中
-            const video = document.querySelector('video');
-            video.srcObject = stream;
+<video id="capVideo" width="640" height="480" autoplay muted></video>
+<video id="outVideo" width="640" height="480" autoplay muted></video>
+<canvas id="capCanvas" style="display: none;"></canvas>
+<canvas id="outCanvas" style="display: none;"></canvas>
+<script type="module">
+    const stream = await navigator.mediaDevices.getUserMedia({video: true});
+    const capVideo = document.querySelector('#capVideo');
+    capVideo.srcObject = stream;
 
-            // 获取视频轨道
-            const videoTrack = stream.getVideoTracks()[0];
-            const imageCapture = new ImageCapture(videoTrack);
+    const videoTrack = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(videoTrack);
 
-            // 找到 canvas 元素或创建一个
-            const canvas = document.getElementById('canvas');
+    const capCanvas = document.querySelector('#capCanvas');
+    const capCanvasCtx = capCanvas.getContext('2d');
 
-            // 定期抓取帧并发送到 WebSocket
-            const captureFrame = () => {
-                imageCapture.grabFrame()
-                    .then((imageBitmap) => {
-                        try {
-                            // 将帧转换为Blob格式发送
-                            canvas.width = imageBitmap.width;
-                            canvas.height = imageBitmap.height;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(imageBitmap, 0, 0);
-                            canvas.toBlob((blob) => {
-                                if (socket.readyState === WebSocket.OPEN) {
-                                    socket.send(blob);
-                                }
-                            });
-                        } catch (e) {
-                            console.log(e);
-                        }
-                    })
-                    .catch((err) => {
-                        if (err) console.error(err)
-                        // else console.error("unknown error")
-                    });
-            };
-
-            setInterval(captureFrame, 25);
-        })
-        .catch((err) => {
-            console.error("Error accessing webcam: ", err);
-        });
-
-    const player = document.getElementById('player');
-    const mediaSource = new MediaSource();
-    player.src = URL.createObjectURL(mediaSource);
-    let videoSourceBuffer;
-    mediaSource.addEventListener('sourceopen', function () {
-        // videoSourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="avc1.4d002a"');
-        videoSourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs=vp9');
-    }, false);
-    mediaSource.addEventListener('sourceended', function () {
-        console.warn('MediaSource ended');
-    }, false);
-    mediaSource.addEventListener('sourceclosed', function () {
-        console.warn('MediaSource closed');
-    }, false);
-
-    const appendToSourceBuffer = (blob) => {
-        // 将队列中的数据块追加到 SourceBuffer
-        new Blob([blob], {type: 'video/webm; codecs=vp9'})
-            .arrayBuffer()
-            .then((buf) => {
-                if (videoSourceBuffer && !videoSourceBuffer.updating) {
-                    videoSourceBuffer.appendBuffer(new Uint8Array(buf));
-                    console.log('SourceBuffer appended');
+    const captureFrame = async () => {
+        if (videoTrack.readyState !== 'live') return;
+        try {
+            const imageBitmap = await imageCapture.grabFrame();
+            capCanvas.width = imageBitmap.width;
+            capCanvas.height = imageBitmap.height;
+            capCanvasCtx.drawImage(imageBitmap, 0, 0);
+            capCanvas.toBlob((blob) => {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(blob);
+                    console.debug(`frame sent: ${blob.size}`);
                 }
-            })
-            .catch((err) => {
-                if (err) console.error(err);
-                else console.error('Unknown error')
             });
+        } catch (err) {
+            if (err) console.error(err)
+            else console.error("unknown error");
+        }
     };
 
-    const socket = new WebSocket(window.location.href.replace('http', 'ws') + 'ws');
+    const outCanvas = document.querySelector('#outCanvas');
+    const outCanvasCtx = outCanvas.getContext('2d');
 
-    socket.onmessage = (event) => {
-        console.log(`frame received: ${event.data.size}`);
-        if (mediaSource.readyState !== 'open') return;
-        if (videoSourceBuffer && !videoSourceBuffer.updating) {
-            appendToSourceBuffer(event.data);
+    const outVideo = document.querySelector('#outVideo');
+    outVideo.srcObject = outCanvas.captureStream();
+
+    const wsUrl = window.location.href.replace('http', 'ws') + 'ws';
+    const clientId = Math.random() * 100000000000000000;
+    const socket = new WebSocket(`${wsUrl}?client_id=${clientId}`);
+
+    socket.onmessage = async (event) => {
+        console.debug(`frame received: ${event.data.size}`);
+        const blobUrl = URL.createObjectURL(event.data);
+        try {
+            const image = new Image();
+            image.src = blobUrl;
+            await image.decode();
+            outCanvas.width = image.width;
+            outCanvas.height = image.height;
+            outCanvasCtx.drawImage(image, 0, 0);
+        } finally {
+            URL.revokeObjectURL(blobUrl);
         }
     };
 
     socket.onopen = function () {
-        console.log('WebSocket connection established');
+        console.log('WebSocket connection opened');
     };
 
     socket.onclose = function () {
@@ -106,6 +76,10 @@
     socket.onerror = function (error) {
         console.error('WebSocket error:', error);
     };
+
+    while (true) {
+        await captureFrame();
+    }
 </script>
 </body>
 </html>
