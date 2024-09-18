@@ -1,5 +1,7 @@
 import os
 
+from starlette import status
+
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
 os.environ["GLOG_logtostderr"] = "0"
@@ -19,7 +21,8 @@ import traceback
 import torch
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request, HTTPException
+from fastapi.staticfiles import StaticFiles
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from mediapipe.tasks.python import vision
@@ -94,10 +97,6 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
         return buffer.tobytes()
 
 
-pool: queue.Queue[VideoFramePipeline] = queue.Queue(6)
-for i in range(pool.maxsize):
-    pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
-
 terminate = False
 
 
@@ -124,9 +123,15 @@ class ConnectionManager:
         await self.active_connections[client_id].send_bytes(message)
 
 
+pool: queue.Queue[VideoFramePipeline] = queue.Queue(6)
+for i in range(pool.maxsize):
+    pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
+
 connection_manager = ConnectionManager()
+clients: dict[str, VideoFramePipeline] = {}
 
 app = FastAPI()
+app.mount("/portraits", StaticFiles(directory="portraits"), name="static")
 
 
 @app.get("/")
@@ -134,8 +139,33 @@ async def index():
     return FileResponse('index.html')
 
 
+@app.get("/getportraits")
+async def get_portrait(request: Request):
+    portraits = []
+    for f in os.listdir("portraits"):
+        name = f.split(".")[0]
+        portraits.append({"name": name, "url": f"{request.base_url}portraits/{f}"})
+    return portraits
+
+
+@app.post("/setportrait")
+async def set_portrait(request: Request):
+    json = await request.json()
+    client_id_ = json.get("client_id", None)
+    portrait = json.get("portrait", None)
+    if not client_id_ or not portrait:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+
+    pipeline = clients.get(client_id_, None)
+    if pipeline:
+        pipeline.prepare_source(f"{portrait}.png", realtime=True)
+
+
 @app.websocket("/ws")
-async def ws(websocket: WebSocket, client_id: str):
+async def ws(websocket: WebSocket, client_id: str, portrait: str):
+    if not client_id or not portrait:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+
     async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
         print(f"bytes received {len(data)}")
         try:
@@ -152,6 +182,8 @@ async def ws(websocket: WebSocket, client_id: str):
             traceback.print_stack()
 
     pipeline = pool.get()
+    clients[client_id] = pipeline
+    pipeline.prepare_source(f"{portrait}.png", realtime=True)
     try:
         await connection_manager.connect(client_id, websocket)
         global terminate
@@ -163,6 +195,7 @@ async def ws(websocket: WebSocket, client_id: str):
         connection_manager.disconnect(client_id)
     finally:
         pool.put(pipeline)
+        del clients[client_id]
 
 
 if __name__ == "__main__":
