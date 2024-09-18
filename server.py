@@ -123,8 +123,8 @@ class ConnectionManager:
     def disconnect(self, client_id: str):
         del self.active_connections[client_id]
 
-    async def send_bytes(self, client_id: str, message: bytes):
-        await self.active_connections[client_id].send_bytes(message)
+    def send_bytes(self, client_id: str, message: bytes):
+        asyncio.ensure_future(self.active_connections[client_id].send_bytes(message))
 
 
 connection_manager = ConnectionManager()
@@ -139,14 +139,14 @@ async def index():
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket, client_id: str):
-    async def handle_ws_message(client: str, message: bytes, pipe: VideoFramePipeline):
+    def handle_ws_message(client: str, message: bytes, pipe: VideoFramePipeline):
         print(f"bytes received {len(message)}")
         try:
             t0 = time.time()
             frame = pipe.handle_frame(message)
             print(f"time taken: {(time.time() - t0) * 1000}ms")
 
-            await connection_manager.send_bytes(client, frame)
+            connection_manager.send_bytes(client, frame)
             print(f"bytes sent {len(frame)}")
         except WebSocketDisconnect:
             print("WebSocket disconnected")
@@ -154,16 +154,13 @@ async def ws(websocket: WebSocket, client_id: str):
         except:
             traceback.print_stack()
 
-    def worker_func(client: str, message: bytes, pipe: VideoFramePipeline):
-        asyncio.ensure_future(handle_ws_message(client, message, pipe))
-
     pipeline = pool.get()
     global terminate, workers
     try:
         await connection_manager.connect(client_id, websocket)
         while not terminate:
             data = await websocket.receive_bytes()
-            workers.apply_async(func=worker_func, args=(client_id, data, pipeline))
+            workers.apply_async(func=handle_ws_message, args=(client_id, data, pipeline))
     except WebSocketDisconnect:
         print("WebSocket disconnected")
         connection_manager.disconnect(client_id)
