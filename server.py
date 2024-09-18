@@ -1,3 +1,4 @@
+import asyncio
 import multiprocessing
 import os
 
@@ -153,13 +154,16 @@ async def ws(websocket: WebSocket, client_id: str):
         except:
             traceback.print_stack()
 
+    def worker_func(client: str, message: bytes, pipe: VideoFramePipeline):
+        asyncio.ensure_future(handle_ws_message(client, message, pipe))
+
     pipeline = pool.get()
     global terminate, workers
     try:
         await connection_manager.connect(client_id, websocket)
         while not terminate:
             data = await websocket.receive_bytes()
-            workers.apply_async(func=handle_ws_message, args=(client_id, data, pipeline))
+            workers.apply_async(func=worker_func, args=(client_id, data, pipeline))
     except WebSocketDisconnect:
         print("WebSocket disconnected")
         connection_manager.disconnect(client_id)
