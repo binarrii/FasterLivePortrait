@@ -173,7 +173,7 @@ async def ws(websocket: WebSocket, client_id: str):
 
 if __name__ == "__main__":
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8080, workers=1)
+        uvicorn.run(app, host="0.0.0.0", port=9090, workers=1)
     except Exception as e:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGTERM)
