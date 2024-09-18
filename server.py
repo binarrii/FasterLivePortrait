@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
@@ -8,7 +9,6 @@ os.environ["GLOG_minloglevel"] = "2"
 from starlette.responses import FileResponse
 from starlette.websockets import WebSocketDisconnect
 
-import asyncio
 import logging
 import time
 import cv2
@@ -19,7 +19,7 @@ import traceback
 import torch
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, WebSocket, BackgroundTasks
+from fastapi import FastAPI, WebSocket
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from mediapipe.tasks.python import vision
@@ -98,6 +98,8 @@ pool: queue.Queue[VideoFramePipeline] = queue.Queue(6)
 for i in range(pool.maxsize):
     pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
 
+workers = multiprocessing.Pool(processes=6)
+
 terminate = False
 
 
@@ -135,12 +137,12 @@ async def index():
 
 
 @app.websocket("/ws")
-async def ws(websocket: WebSocket, client_id: str, tasks: BackgroundTasks):
-    async def handle_ws_message(client: str, message: bytes, pipeline: VideoFramePipeline):
+async def ws(websocket: WebSocket, client_id: str):
+    async def handle_ws_message(client: str, message: bytes, pipe: VideoFramePipeline):
         print(f"bytes received {len(message)}")
         try:
             t0 = time.time()
-            frame = pipeline.handle_frame(message)
+            frame = pipe.handle_frame(message)
             print(f"time taken: {(time.time() - t0) * 1000}ms")
 
             await connection_manager.send_bytes(client, frame)
@@ -151,13 +153,13 @@ async def ws(websocket: WebSocket, client_id: str, tasks: BackgroundTasks):
         except:
             traceback.print_stack()
 
+    pipeline = pool.get()
+    global terminate, workers
     try:
         await connection_manager.connect(client_id, websocket)
-        pipeline = pool.get()
-        global terminate
         while not terminate:
-            message = await websocket.receive_bytes()
-            asyncio.ensure_future(handle_ws_message(client_id, message, pipeline))
+            data = await websocket.receive_bytes()
+            workers.apply_async(func=handle_ws_message, args=(client_id, data, pipeline))
     except WebSocketDisconnect:
         print("WebSocket disconnected")
         connection_manager.disconnect(client_id)
