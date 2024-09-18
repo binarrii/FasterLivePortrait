@@ -1,6 +1,6 @@
 import asyncio
-import multiprocessing
 import os
+from concurrent.futures import ProcessPoolExecutor
 
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
@@ -99,7 +99,7 @@ pool: queue.Queue[VideoFramePipeline] = queue.Queue(1)
 for i in range(pool.maxsize):
     pool.put_nowait(VideoFramePipeline(cfg=infer_cfg))
 
-workers = multiprocessing.Pool(processes=1)
+executor = ProcessPoolExecutor(max_workers=1)
 
 terminate = False
 
@@ -155,12 +155,12 @@ async def ws(websocket: WebSocket, client_id: str):
             traceback.print_stack()
 
     pipeline = pool.get()
-    global terminate, workers
+    global terminate, executor
     try:
         await connection_manager.connect(client_id, websocket)
         while not terminate:
             data = await websocket.receive_bytes()
-            workers.apply_async(func=handle_ws_message, args=(client_id, data, pipeline))
+            executor.submit(handle_ws_message, client_id, data, pipeline)
     except WebSocketDisconnect:
         print("WebSocket disconnected")
         connection_manager.disconnect(client_id)
