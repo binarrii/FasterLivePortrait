@@ -8,8 +8,6 @@
 <body>
 <video id="capVideo" width="640" height="480" autoplay muted></video>
 <video id="outVideo" width="640" height="480" autoplay muted></video>
-<canvas id="capCanvas" style="display: none;"></canvas>
-<canvas id="outCanvas" style="display: none;"></canvas>
 <script type="module">
     const stream = await navigator.mediaDevices.getUserMedia({video: true});
     const capVideo = document.querySelector('#capVideo');
@@ -18,30 +16,33 @@
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
 
-    const capCanvas = document.querySelector('#capCanvas');
-    const capCanvasCtx = capCanvas.getContext('2d');
+    const capCanvas = document.createElement('canvas');
+    const capCanvasCtx = capCanvas.getContext('bitmaprenderer');
 
-    const captureFrame = async () => {
+    const captureAndSendFrame = async () => {
         if (videoTrack.readyState !== 'live') return;
         try {
+            const t0 = new Date().getTime();
             const imageBitmap = await imageCapture.grabFrame();
             capCanvas.width = imageBitmap.width;
             capCanvas.height = imageBitmap.height;
-            capCanvasCtx.drawImage(imageBitmap, 0, 0);
+            capCanvasCtx.transferFromImageBitmap(imageBitmap);
             capCanvas.toBlob((blob) => {
                 if (socket.readyState === WebSocket.OPEN) {
                     socket.send(blob);
                     console.debug(`frame sent: ${blob.size}`);
                 }
-            });
+            }, 'image/webp', 0.75);
+            const t1 = new Date().getTime();
+            console.debug(`capture time taken: ${ t1 - t0 }ms`);
         } catch (err) {
             if (err) console.error(err)
             else console.error("unknown error");
         }
     };
 
-    const outCanvas = document.querySelector('#outCanvas');
-    const outCanvasCtx = outCanvas.getContext('2d');
+    const outCanvas = document.createElement('canvas');
+    const outCanvasCtx = outCanvas.getContext('bitmaprenderer');
 
     const outVideo = document.querySelector('#outVideo');
     outVideo.srcObject = outCanvas.captureStream();
@@ -52,21 +53,20 @@
 
     socket.onmessage = async (event) => {
         console.debug(`frame received: ${event.data.size}`);
-        const blobUrl = URL.createObjectURL(event.data);
-        try {
-            const image = new Image();
-            image.src = blobUrl;
-            await image.decode();
-            outCanvas.width = image.width;
-            outCanvas.height = image.height;
-            outCanvasCtx.drawImage(image, 0, 0);
-        } finally {
-            URL.revokeObjectURL(blobUrl);
-        }
+        captureAndSendFrame();
+
+        const t0 = new Date().getTime();
+        const imageBitmap = await createImageBitmap(event.data);
+        outCanvas.width = imageBitmap.width;
+        outCanvas.height = imageBitmap.height;
+        outCanvasCtx.transferFromImageBitmap(imageBitmap);
+        const t1 = new Date().getTime();
+        console.debug(`render time taken: ${ t1 - t0 }ms`);
     };
 
     socket.onopen = function () {
         console.log('WebSocket connection opened');
+        captureAndSendFrame();
     };
 
     socket.onclose = function () {
@@ -76,10 +76,6 @@
     socket.onerror = function (error) {
         console.error('WebSocket error:', error);
     };
-
-    while (true) {
-        await captureFrame();
-    }
 </script>
 </body>
 </html>

@@ -17,11 +17,13 @@ import cv2
 import queue
 import signal
 import traceback
+import threading
 
 import torch
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, WebSocket, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
@@ -39,12 +41,13 @@ if torch.cuda.is_available():
 infer_cfg = OmegaConf.load(conf_file)
 infer_cfg.infer_params.flag_pasteback = False
 
+lock = threading.Lock()
 
 class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def __init__(self, cfg, **kwargs):
         super().__init__(cfg, **kwargs)
-        self.prepare_source("aijia.png", realtime=True)
+        # self.prepare_source("aijia.png", realtime=True)
         mp_base_options = mpBaseOptions(model_asset_path=face_detect_model)
         self.face_detect_options = vision.FaceDetectorOptions(
             base_options=mp_base_options,
@@ -52,6 +55,12 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
             min_suppression_threshold=0.3
         )
         self.infer_times = []
+
+    def prepare_source(self, source_path, **kwargs):
+        self.src_infos = []
+        self.src_imgs = []
+        self.src_lmk_pre = None
+        return super().prepare_source(source_path, **kwargs)
 
     def handle_frame(self, frame: bytes) -> bytes:
         # noinspection PyBroadException
@@ -93,7 +102,7 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
                 logging.warning(f"{repr(e)}")
             out_crop = driving_frame
 
-        is_success, buffer = cv2.imencode(".png", out_crop)
+        is_success, buffer = cv2.imencode(".webp", out_crop, [cv2.IMWRITE_WEBP_QUALITY, 100])
         return buffer.tobytes()
 
 
@@ -131,14 +140,25 @@ connection_manager = ConnectionManager()
 clients: dict[str, VideoFramePipeline] = {}
 
 app = FastAPI()
-app.mount("/portraits", StaticFiles(directory="portraits"), name="static")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins="*",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/portraits", StaticFiles(directory="portraits"), name="portraits")
+app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
 
 
 @app.get("/")
 async def index():
-    return FileResponse('index.html')
+    return FileResponse('dist/index.html')
 
 
+@app.get("/apt/getportraits")
 @app.get("/getportraits")
 async def get_portrait(request: Request):
     portraits = []
@@ -148,17 +168,23 @@ async def get_portrait(request: Request):
     return portraits
 
 
+@app.post("/apt/setportrait")
 @app.post("/setportrait")
 async def set_portrait(request: Request):
     json = await request.json()
-    client_id_ = json.get("client_id", None)
+    client_id = json.get("client_id", None)
     portrait = json.get("portrait", None)
-    if not client_id_ or not portrait:
+    if not client_id or not portrait:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
-    pipeline = clients.get(client_id_, None)
-    if pipeline:
-        pipeline.prepare_source(f"{portrait}.png", realtime=True)
+    client_id = str(client_id)
+    pipeline = clients.get(client_id, None)
+    if pipeline is not None:
+        with lock:
+            pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
+            logger.info(f"Portrait changed: {client_id} -> {portrait}")
+    else:
+        logger.error(f"Invalid client: {client_id}")
 
 
 @app.websocket("/ws")
@@ -167,23 +193,29 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
     async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
-        print(f"bytes received {len(data)}")
+        # print(f"bytes received {len(data)}")
         try:
             t0 = time.time()
             frame = pipe.handle_frame(data)
-            print(f"time taken: {(time.time() - t0) * 1000}ms")
+            # print(f"time taken: {(time.time() - t0) * 1000}ms")
 
             await connection_manager.send_bytes(client, frame)
-            print(f"bytes sent {len(frame)}")
+            # print(f"bytes sent {len(frame)}")
         except WebSocketDisconnect:
-            print("WebSocket disconnected")
+            logger.info(f"WebSocket disconnected: {client_id}")
             connection_manager.disconnect(client)
         except:
             traceback.print_stack()
 
-    pipeline = pool.get()
-    clients[client_id] = pipeline
-    pipeline.prepare_source(f"{portrait}.png", realtime=True)
+    client_id = str(client_id)
+    pipeline = clients.get(client_id, None)
+    if pipeline is None:
+        pipeline = pool.get()
+        clients[client_id] = pipeline
+
+    with lock:
+        pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
+
     try:
         await connection_manager.connect(client_id, websocket)
         global terminate
@@ -191,16 +223,18 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
             message = await websocket.receive_bytes()
             asyncio.ensure_future(handle_ws_message(client_id, message, pipeline))
     except WebSocketDisconnect:
-        print("WebSocket disconnected")
+        logger.info(f"WebSocket disconnected: {client_id}")
         connection_manager.disconnect(client_id)
     finally:
         pool.put(pipeline)
+        logger.info(f"pipeline recycled: {client_id}")
         del clients[client_id]
+        logger.info(f"client removed: {client_id}")
 
 
 if __name__ == "__main__":
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8080, workers=1)
+        uvicorn.run(app, host="0.0.0.0", port=9090, workers=1)
     except Exception as e:
         traceback.print_exc()
         os.kill(os.getpid(), signal.SIGTERM)
