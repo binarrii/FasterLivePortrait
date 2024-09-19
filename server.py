@@ -64,7 +64,7 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def handle_frame(self, frame: bytes) -> bytes:
         # noinspection PyBroadException
-        driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+        driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_REDUCED_COLOR_2)
         try:
             if not self.src_imgs or len(self.src_imgs) <= 0:
                 raise Exception("src image is empty")
@@ -209,14 +209,14 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
 
     client_id = str(client_id)
     pipeline = clients.get(client_id, None)
-    if pipeline is None:
-        pipeline = pool.get()
-        clients[client_id] = pipeline
-
-    with lock:
-        pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
-
     try:
+        if pipeline is None:
+            pipeline = pool.get_nowait()
+            clients[client_id] = pipeline
+
+        with lock:
+            pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
+
         await connection_manager.connect(client_id, websocket)
         global terminate
         while not terminate:
