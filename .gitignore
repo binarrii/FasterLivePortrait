@@ -7,5 +7,4 @@ results
 venv
 *.egg-info
 build
-dist
 *.eg
