@@ -163,7 +163,7 @@ async def index():
 
 @app.get("/apt/getportraits")
 @app.get("/getportraits")
-async def get_portrait(request: Request):
+async def get_portraits():
     portraits = []
     for f in os.listdir("portraits"):
         if f.startswith('t_'):
