@@ -44,6 +44,7 @@ infer_cfg.infer_params.flag_pasteback = False
 
 lock = threading.Lock()
 
+
 class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def __init__(self, cfg, **kwargs):
@@ -83,7 +84,7 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
                 if faces is None or len(faces.detections) <= 0:
                     self.src_lmk_pre = None
                     raise Exception("No face detected")
-                
+
                 dri_crop, out_crop, out_org = self.run(driving_frame, self.src_imgs[0],
                                                        self.src_infos[0], realtime=True, faces=faces)
                 new_size = (out_crop.shape[1] * 2, out_crop.shape[0] * 2)
