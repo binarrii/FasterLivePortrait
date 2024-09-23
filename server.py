@@ -1,31 +1,33 @@
 import os
 
-from starlette import status
-
 os.environ["NO_ALBUMENTATIONS_UPDATE"] = "1"
 os.environ["GLOG_v"] = "0"
 os.environ["GLOG_logtostderr"] = "0"
 os.environ["GLOG_minloglevel"] = "2"
-
-from starlette.responses import FileResponse
-from starlette.websockets import WebSocketDisconnect
 
 import asyncio
 import logging
 import time
 import cv2
 import queue
+import requests
 import signal
 import traceback
 import threading
-
+import uuid
 import torch
-import numpy as np
 import uvicorn
+
+import mediapipe as mp
+import numpy as np
+
 from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import mediapipe as mp
+from starlette.responses import FileResponse
+from starlette.websockets import WebSocketDisconnect
+from starlette import status
+from PIL import Image
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from mediapipe.tasks.python import vision
 from omegaconf import OmegaConf
@@ -47,24 +49,27 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def __init__(self, cfg, **kwargs):
         super().__init__(cfg, **kwargs)
-        # self.prepare_source("aijia.png", realtime=True)
         mp_base_options = mpBaseOptions(model_asset_path=face_detect_model)
-        self.face_detect_options = vision.FaceDetectorOptions(
+        face_detect_options = vision.FaceDetectorOptions(
             base_options=mp_base_options,
             min_detection_confidence=0.5,
             min_suppression_threshold=0.3
         )
+        self.face_detector = vision.FaceDetector.create_from_options(face_detect_options)
+        self.faces = None
         self.infer_times = []
 
     def prepare_source(self, source_path, **kwargs):
         self.src_infos = []
         self.src_imgs = []
         self.src_lmk_pre = None
+        self.infer_times = []
         return super().prepare_source(source_path, **kwargs)
 
     def handle_frame(self, frame: bytes) -> bytes:
         # noinspection PyBroadException
-        driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_REDUCED_COLOR_2)
+        driving_frame = cv2.imdecode(np.frombuffer(frame, np.uint8), cv2.IMREAD_COLOR)
+        driving_frame = cv2.flip(driving_frame, 1)
         try:
             if not self.src_imgs or len(self.src_imgs) <= 0:
                 raise Exception("src image is empty")
@@ -73,22 +78,18 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
 
             t0 = time.time()
             try:
-                dri_crop, out_crop, out_org = self.run(driving_frame,
-                                                       self.src_imgs[0],
-                                                       self.src_infos[0],
-                                                       realtime=True)
+                frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                faces = self.face_detector.detect(mp_image)
+                if faces is None or len(faces.detections) <= 0:
+                    self.src_lmk_pre = None
+                    raise Exception("No face detected")
+                
+                dri_crop, out_crop, out_org = self.run(driving_frame, self.src_imgs[0],
+                                                       self.src_infos[0], realtime=True, faces=faces)
+                new_size = (out_crop.shape[1] * 2, out_crop.shape[0] * 2)
+                out_crop = cv2.resize(out_crop, new_size, interpolation=cv2.INTER_LANCZOS4)
                 out_crop = cv2.cvtColor(out_crop, cv2.COLOR_BGR2RGB)
-                # out_crop = stiching(cv_image, out_crop)
-                if len(self.infer_times) % 15 == 0:
-                    frame_rgb = cv2.cvtColor(driving_frame, cv2.COLOR_BGR2RGB)
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-                    detector = vision.FaceDetector.create_from_options(self.face_detect_options)
-                    faces = detector.detect(mp_image)
-                    # noinspection PyUnresolvedReferences
-                    if faces is None or len(faces.detections) <= 0:
-                        self.src_lmk_pre = None
-                        logging.warning("No face detected")
-                        raise Exception("No face detected")
             finally:
                 if len(self.infer_times) > 7200:
                     self.infer_times.pop(0)
@@ -102,7 +103,7 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
                 logging.warning(f"{repr(e)}")
             out_crop = driving_frame
 
-        is_success, buffer = cv2.imencode(".webp", out_crop, [cv2.IMWRITE_WEBP_QUALITY, 100])
+        is_success, buffer = cv2.imencode(".jpeg", out_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
         return buffer.tobytes()
 
 
@@ -126,7 +127,8 @@ class ConnectionManager:
         self.active_connections[client_id] = websocket
 
     def disconnect(self, client_id: str):
-        del self.active_connections[client_id]
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
 
     async def send_bytes(self, client_id: str, message: bytes):
         await self.active_connections[client_id].send_bytes(message)
@@ -151,6 +153,7 @@ app.add_middleware(
 
 app.mount("/portraits", StaticFiles(directory="portraits"), name="portraits")
 app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+app.mount("/images", StaticFiles(directory="dist/images"), name="images")
 
 
 @app.get("/")
@@ -163,8 +166,10 @@ async def index():
 async def get_portrait(request: Request):
     portraits = []
     for f in os.listdir("portraits"):
+        if f.startswith('t_'):
+            continue
         name = f.split(".")[0]
-        portraits.append({"name": name, "url": f"{request.base_url}portraits/{f}"})
+        portraits.append({"name": name, "url": f"/portraits/{f}"})
     return portraits
 
 
@@ -177,11 +182,19 @@ async def set_portrait(request: Request):
     if not client_id or not portrait:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
+    portrait_path = f"portraits/{portrait}.png"
+    if portrait.startswith('http'):
+        img = requests.get(portrait).content
+        portrait = f"t_{uuid.uuid4().hex}"
+        with open(f"/tmp/{portrait}.png", 'wb') as f:
+            f.write(img)
+        portrait_path = f"/tmp/{portrait}.png"
+
     client_id = str(client_id)
     pipeline = clients.get(client_id, None)
     if pipeline is not None:
         with lock:
-            pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
+            pipeline.prepare_source(portrait_path, realtime=True)
             logger.info(f"Portrait changed: {client_id} -> {portrait}")
     else:
         logger.error(f"Invalid client: {client_id}")
@@ -195,7 +208,7 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
     async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
         # print(f"bytes received {len(data)}")
         try:
-            t0 = time.time()
+            # t0 = time.time()
             frame = pipe.handle_frame(data)
             # print(f"time taken: {(time.time() - t0) * 1000}ms")
 
@@ -214,6 +227,9 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
             pipeline = pool.get_nowait()
             clients[client_id] = pipeline
 
+        if pipeline is None:
+            return
+
         with lock:
             pipeline.prepare_source(f"portraits/{portrait}.png", realtime=True)
 
@@ -222,14 +238,17 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
         while not terminate:
             message = await websocket.receive_bytes()
             asyncio.ensure_future(handle_ws_message(client_id, message, pipeline))
+    except queue.Empty:
+        logger.warning(f"No pipeline available: {client_id}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {client_id}")
-        connection_manager.disconnect(client_id)
     finally:
+        connection_manager.disconnect(client_id)
         pool.put(pipeline)
-        logger.info(f"pipeline recycled: {client_id}")
-        del clients[client_id]
-        logger.info(f"client removed: {client_id}")
+        logger.info(f"Pipeline recycled: {client_id}")
+        if client_id in clients:
+            del clients[client_id]
+            logger.info(f"Client removed: {client_id}")
 
 
 if __name__ == "__main__":

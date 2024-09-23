@@ -5,14 +5,18 @@
 # @FileName: faster_live_portrait_pipeline.py
 
 import copy
+import cv2
 import pdb
 import time
 import traceback
+
 from PIL import Image
-import cv2
+from torch.cuda import stream
 from tqdm import tqdm
 import numpy as np
 import torch
+import mediapipe as mp
+
 
 from .. import models
 from ..utils.crop import crop_image, parse_bbox_from_landmark, crop_image_by_bbox, paste_back, paste_back_pytorch
@@ -20,11 +24,18 @@ from ..utils.utils import resize_to_limit, prepare_paste_back, get_rotation_matr
     calc_eye_close_ratio, transform_keypoint, concat_feat
 from src.utils import utils
 
+from src.utils.detect_face import reduce_face_change, face_rotate_too_much
+import logging
+import av
+av.logging.set_level(av.logging.INFO)
+av.logging.set_libav_level(av.logging.INFO)
+logger = logging.getLogger(__file__)
 
 class FasterLivePortraitPipeline:
     def __init__(self, cfg, **kwargs):
         self.cfg = cfg
         self.init(**kwargs)
+        self.last_out_crop = None
 
     def init(self, **kwargs):
         self.init_vars(**kwargs)
@@ -287,6 +298,15 @@ class FasterLivePortraitPipeline:
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         I_p_pstbk = torch.from_numpy(img_src).to(self.device).float()
         realtime = kwargs.get("realtime", False)
+        faces = kwargs.get("faces", None)
+
+        if faces is None or len(faces.detections) <= 0:
+            if self.last_out_crop is not None:
+                out_crop = copy.deepcopy(self.last_out_crop)
+                return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
+            else:
+                raise Exception("No face detected")
+            self.src_lmk_pre = None
 
         if self.cfg.infer_params.flag_crop_driving_video:
             if self.src_lmk_pre is None:
@@ -351,6 +371,19 @@ class FasterLivePortraitPipeline:
             "scale": scale,
             "kp": kp
         }
+
+        pitch, yaw, roll = reduce_face_change(x_d_i_info)
+        #pitch, yaw, roll, face_change_exceeded = reduce_face_change(x_d_i_info)
+        #if face_change_exceeded:
+        #    out_crop = copy.deepcopy(self.last_out_crop)
+        #    return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
+
+        ## 这块代码会使得头部转动超过返回后，画面卡住在超过前的那一帧
+        # if face_rotate_too_much(x_d_i_info):
+        #     logger.info("face rotate too much")
+        #     out_crop = copy.deepcopy(self.last_out_crop)
+        #     return img_crop, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
+
         R_d_i = get_rotation_matrix(pitch, yaw, roll)
 
         if self.R_d_0 is None:
@@ -365,7 +398,8 @@ class FasterLivePortraitPipeline:
             if self.cfg.infer_params.flag_relative_motion:
                 R_new = (R_d_i @ np.transpose(R_d_0, (0, 2, 1))) @ R_s
                 delta_new = x_s_info['exp'] + (x_d_i_info['exp'] - x_d_0_info['exp'])
-                scale_new = x_s_info['scale'] * (x_d_i_info['scale'] / x_d_0_info['scale'])
+                # scale_new = x_s_info['scale'] * (x_d_i_info['scale'] / x_d_0_info['scale'])
+                scale_new = x_s_info['scale'].copy()
                 t_new = x_s_info['t'] + (x_d_i_info['t'] - x_d_0_info['t'])
             else:
                 R_new = R_d_i
@@ -394,8 +428,7 @@ class FasterLivePortraitPipeline:
                     eyes_delta, lip_delta = None, None
                     if self.cfg.infer_params.flag_eye_retargeting:
                         c_d_eyes_i = input_eye_ratio
-                        combined_eye_ratio_tensor = self.calc_combined_eye_ratio(c_d_eyes_i,
-                                                                                 source_lmk)
+                        combined_eye_ratio_tensor = self.calc_combined_eye_ratio(c_d_eyes_i, source_lmk)
                         # ∆_eyes,i = R_eyes(x_s; c_s,eyes, c_d,eyes,i)
                         eyes_delta = self.retarget_eye(x_s, combined_eye_ratio_tensor)
                     if self.cfg.infer_params.flag_lip_retargeting:
@@ -426,6 +459,7 @@ class FasterLivePortraitPipeline:
                 # I_p_pstbk = paste_back(out_crop, crop_info['M_c2o'], I_p_pstbk, mask_ori_float)
                 I_p_pstbk = paste_back_pytorch(out_crop, M, I_p_pstbk, mask_ori_float)
 
+        self.last_out_crop = copy.deepcopy(out_crop)
         return img_crop, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
 
     def __del__(self):

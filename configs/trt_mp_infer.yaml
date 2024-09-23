@@ -68,13 +68,10 @@ crop_params:
   src_dsize: 256
   src_scale: 2.3
   src_vx_ratio: 0.0
-  # src_vy_ratio: -0.125
   src_vy_ratio: 0.0
   dri_scale: 2.2
   dri_vx_ratio: 0.0
-  # dri_vy_ratio: -0.1
   dri_vy_ratio: 0.0
-
 
 infer_params:
   flag_crop_driving_video: True

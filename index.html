@@ -32,7 +32,7 @@
                     socket.send(blob);
                     console.debug(`frame sent: ${blob.size}`);
                 }
-            }, 'image/webp', 0.75);
+            }, 'image/jpeg', 0.7);
             const t1 = new Date().getTime();
             console.debug(`capture time taken: ${ t1 - t0 }ms`);
         } catch (err) {
