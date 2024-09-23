@@ -27,7 +27,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.responses import FileResponse
 from starlette.websockets import WebSocketDisconnect
 from starlette import status
-from PIL import Image
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from mediapipe.tasks.python import vision
 from omegaconf import OmegaConf

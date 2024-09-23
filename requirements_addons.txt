@@ -1,3 +1,4 @@
+fastapi[uvicorn]
 streamlit
 streamlit-webrtc
 pyav

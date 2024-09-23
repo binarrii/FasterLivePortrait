@@ -9,3 +9,9 @@ insightface
 huggingface_hub[cli]
 mediapipe
 torchgeometry
+
+fastapi[uvicorn]
+streamlit
+streamlit-webrtc
+pyav
+face_alignment
