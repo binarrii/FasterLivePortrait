@@ -143,6 +143,7 @@ clients: dict[str, VideoFramePipeline] = {}
 
 app = FastAPI()
 
+# noinspection PyTypeChecker
 app.add_middleware(
     CORSMiddleware,
     allow_origins="*",
@@ -205,6 +206,7 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
     if not client_id or not portrait:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
+    # noinspection PyBroadException
     async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
         # print(f"bytes received {len(data)}")
         try:
