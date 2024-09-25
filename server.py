@@ -47,6 +47,7 @@ infer_cfg.infer_params.flag_pasteback = False
 lock = threading.Lock()
 
 
+# noinspection PyAttributeOutsideInit
 class VideoFramePipeline(FasterLivePortraitPipeline):
 
     def __init__(self, cfg, **kwargs):
@@ -61,7 +62,6 @@ class VideoFramePipeline(FasterLivePortraitPipeline):
         self.faces = None
         self.infer_times = []
 
-    # noinspection PyAttributeOutsideInit
     def prepare_source(self, source_path, **kwargs):
         self.src_infos = []
         self.src_imgs = []
