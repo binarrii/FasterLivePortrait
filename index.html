@@ -7,15 +7,16 @@
     <title>Portrait</title>
 </head>
 <body>
-<video id="capVideo" width="640" height="480" autoplay muted></video>
-<video id="outVideo" width="640" height="480" autoplay muted></video>
+<video id="capVideo" width="640" height="480" autoplay muted playsinline disablepictureinpicture></video>
+<video id="outVideo" width="640" height="480" autoplay muted playsinline disablepictureinpicture></video>
 <script type="module">
     const stream = await navigator.mediaDevices.getUserMedia({video: true});
     const capVideo = document.querySelector('#capVideo');
     capVideo.srcObject = stream;
+    capVideo.onplaying = () => captureAndSendFrame();
 
     const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
+    // const imageCapture = new ImageCapture(videoTrack);
 
     const capCanvas = document.createElement('canvas');
     const capCanvasCtx = capCanvas.getContext('bitmaprenderer');
@@ -24,7 +25,9 @@
         if (videoTrack.readyState !== 'live') return;
         try {
             const t0 = new Date().getTime();
-            const imageBitmap = await imageCapture.grabFrame();
+            // compatibility issues
+            // const imageBitmap = await imageCapture.grabFrame();
+            const imageBitmap = await createImageBitmap(capVideo);
             capCanvas.width = imageBitmap.width;
             capCanvas.height = imageBitmap.height;
             capCanvasCtx.transferFromImageBitmap(imageBitmap);
@@ -67,7 +70,6 @@
 
     socket.onopen = function () {
         console.log('WebSocket connection opened');
-        captureAndSendFrame();
     };
 
     socket.onclose = function () {

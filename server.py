@@ -15,18 +15,20 @@ import signal
 import traceback
 import threading
 import uuid
+
 import torch
 import uvicorn
-
-import mediapipe as mp
-import numpy as np
-
 from fastapi import FastAPI, WebSocket, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from starlette.responses import FileResponse
 from starlette.websockets import WebSocketDisconnect
 from starlette import status
+
+import numpy as np
+import mediapipe as mp
+
 from mediapipe.tasks.python import BaseOptions as mpBaseOptions
 from mediapipe.tasks.python import vision
 from omegaconf import OmegaConf
@@ -153,18 +155,52 @@ app.add_middleware(
 )
 
 app.mount("/portraits", StaticFiles(directory="portraits"), name="portraits")
-app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-app.mount("/images", StaticFiles(directory="dist/images"), name="images")
+app.mount("/pc/assets", StaticFiles(directory="pc/dist/assets"), name="pc_assets")
+app.mount("/ph/assets", StaticFiles(directory="ph/dist/assets"), name="ph_assets")
+app.mount("/pc/images", StaticFiles(directory="pc/dist/images"), name="pc_images")
+app.mount("/ph/images", StaticFiles(directory="ph/dist/images"), name="ph_images")
 
 
 @app.get("/")
 async def index():
-    return FileResponse('dist/index.html')
+    response = RedirectResponse(url='/pc/')
+    response.status_code = 302
+    return response
+
+
+@app.get("/pc/")
+async def pc_index():
+    response = FileResponse('pc/dist/index.html')
+    response.set_cookie("x-client", "pc")
+    return response
+
+
+@app.get("/ph/")
+async def ph_index():
+    response = FileResponse('ph/dist/index.html')
+    response.set_cookie("x-client", "ph")
+    return response
+
+
+@app.get("/assets/{rest_of_path:path}")
+async def assets(request: Request, rest_of_path: str):
+    x_client = request.cookies.get('x-client') or "pc"
+    response = RedirectResponse(url=f"/{x_client}/assets/{rest_of_path}")
+    response.status_code = 302
+    return response
+
+
+@app.get("/images/{rest_of_path:path}")
+async def images(request: Request, rest_of_path: str):
+    x_client = request.cookies.get('x-client') or "pc"
+    response = RedirectResponse(url=f"/{x_client}/images/{rest_of_path}")
+    response.status_code = 302
+    return response
 
 
 @app.get("/apt/getportraits")
 @app.get("/getportraits")
-async def get_portraits():
+async def get_portrait():
     portraits = []
     for f in os.listdir("portraits"):
         if f.startswith('t_'):
@@ -201,12 +237,13 @@ async def set_portrait(request: Request):
         logger.error(f"Invalid client: {client_id}")
 
 
+@app.websocket("/pc/ws")
+@app.websocket("/ph/ws")
 @app.websocket("/ws")
 async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
     if not client_id or not portrait:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
 
-    # noinspection PyBroadException
     async def handle_ws_message(client: str, data: bytes, pipe: VideoFramePipeline):
         # print(f"bytes received {len(data)}")
         try:
@@ -241,16 +278,16 @@ async def ws(websocket: WebSocket, client_id: str, portrait: str = "aijia"):
             message = await websocket.receive_bytes()
             asyncio.ensure_future(handle_ws_message(client_id, message, pipeline))
     except queue.Empty:
-        logger.warning(f"No pipeline available: {client_id}")
+        logger.warning(f"No pipelien available: {client_id}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {client_id}")
     finally:
         connection_manager.disconnect(client_id)
         pool.put(pipeline)
-        logger.info(f"Pipeline recycled: {client_id}")
+        logger.info(f"pipeline recycled: {client_id}")
         if client_id in clients:
             del clients[client_id]
-            logger.info(f"Client removed: {client_id}")
+            logger.info(f"client removed: {client_id}")
 
 
 if __name__ == "__main__":
