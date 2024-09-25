@@ -1,17 +1,14 @@
 #!/bin/bash
 
-NAME="faster_liveportrait_dev"
+NAME="livep"
 
 sudo docker rm -f "$NAME" &> /dev/null
-sudo docker run \
-    -it \
+docker run -d \
+    -p 9090:9090 \
+    --volume=./ph:/root/FasterLivePortrait/ph \
+    --volume=./pc:/root/FasterLivePortrait/pc \
     --restart=always \
-    --network=host \
     --runtime=nvidia \
     --gpus="device=0" \
     --name="$NAME" \
-    -e NO_ALBUMENTATIONS_UPDATE=1 \
-    -v .:/root/FasterLivePortrait \
-    -w /root/FasterLivePortrait \
-    binarii/faster_liveportrait:v3 \
-    /bin/bash
+    binarii/livep:202409231300
