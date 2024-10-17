@@ -298,15 +298,15 @@ class FasterLivePortraitPipeline:
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         I_p_pstbk = torch.from_numpy(img_src).to(self.device).float()
         realtime = kwargs.get("realtime", False)
-        faces = kwargs.get("faces", None)
+        # faces = kwargs.get("faces", None)
 
-        if faces is None or len(faces.detections) <= 0:
-            if self.last_out_crop is not None:
-                out_crop = copy.deepcopy(self.last_out_crop)
-                return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
-            else:
-                raise Exception("No face detected")
-            self.src_lmk_pre = None
+        # if faces is None or len(faces.detections) <= 0:
+        #     if self.last_out_crop is not None:
+        #         out_crop = copy.deepcopy(self.last_out_crop)
+        #         return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
+        #     else:
+        #         raise Exception("No face detected")
+        #     self.src_lmk_pre = None
 
         if self.cfg.infer_params.flag_crop_driving_video:
             if self.src_lmk_pre is None:
@@ -361,7 +361,13 @@ class FasterLivePortraitPipeline:
 
         input_eye_ratio = calc_eye_close_ratio(lmk_crop[None])
         input_lip_ratio = calc_lip_close_ratio(lmk_crop[None])
-        pitch, yaw, roll, t, exp, scale, kp = self.model_dict["motion_extractor"].predict(img_crop)
+
+        motion_frame = kwargs.get("motion_frame", None)
+        if motion_frame:
+            pitch, yaw, roll, t, exp, scale, kp = self.extract_motion(motion_frame)
+        else:
+            pitch, yaw, roll, t, exp, scale, kp = self.model_dict["motion_extractor"].predict(img_crop)
+        
         x_d_i_info = {
             "pitch": pitch,
             "yaw": yaw,
@@ -464,3 +470,37 @@ class FasterLivePortraitPipeline:
 
     def __del__(self):
         self.clean_models()
+
+
+    def extract_motion(self, img_bgr, **kwargs):
+        src_face = self.model_dict["face_analysis"].predict(img_bgr)
+        if len(src_face) == 0:
+            return None, None, None
+        
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        lmk = self.model_dict["landmark"].predict(img_rgb, src_face[0])
+
+        ret_bbox = parse_bbox_from_landmark(
+            lmk,
+            scale=self.cfg.crop_params.dri_scale,
+            vx_ratio_crop_video=self.cfg.crop_params.dri_vx_ratio,
+            vy_ratio=self.cfg.crop_params.dri_vy_ratio,
+        )["bbox"]
+
+        ret_dct = crop_image_by_bbox(
+            img_rgb,
+            bbox=[
+                ret_bbox[0, 0],
+                ret_bbox[0, 1],
+                ret_bbox[2, 0],
+                ret_bbox[2, 1],
+            ],
+            lmk=lmk,
+            dsize=kwargs.get("dsize", 512),
+            flag_rot=False,
+            borderValue=(0, 0, 0),
+        )
+        img_crop = ret_dct["img_crop"]
+        img_crop = cv2.resize(img_crop, (256, 256))
+        
+        return self.model_dict["motion_extractor"].predict(img_crop)

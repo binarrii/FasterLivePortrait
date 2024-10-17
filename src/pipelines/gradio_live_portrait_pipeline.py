@@ -57,6 +57,7 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
             self,
             input_source_image_path=None,
             input_source_video_path=None,
+            input_motion_video_path=None,
             input_driving_video_path=None,
             flag_relative_input=True,
             flag_do_crop_input=True,
@@ -110,7 +111,7 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
             update_ret = self.update_cfg(args_user)
             # video driven animation
             video_path, video_path_concat, total_time = self.run_local(input_driving_video_path, input_source_path,
-                                                                       update_ret=update_ret)
+                                                                       update_ret=update_ret, motion_video_path=input_motion_video_path)
             gr.Info(f"Run successfully! Cost: {total_time} seconds!", duration=3)
             return video_path, video_path_concat,
         else:
@@ -151,17 +152,26 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
                                       f"{os.path.basename(source_path)}-{os.path.basename(driving_video_path)}-org.mp4")
         vout_org = cv2.VideoWriter(vsave_org_path, fourcc, fps, (w, h))
 
-        infer_times = []
+        motion_video_path = kwargs.get("motion_video_path", None)
+        if motion_video_path:
+            mcap = cv2.VideoCapture(motion_video_path)
+
+        motion_frame = None
+        # infer_times = []
         for i in tqdm(range(max_frame)):
             ret, frame = vcap.read()
             if not ret:
                 break
-            t0 = time.time()
+            if motion_video_path:
+                _, motion_frame = mcap.read()
+
+            # t0 = time.time()
             if self.is_source_video:
-                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[i], self.src_infos[i])
+                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[i], self.src_infos[i], motion_frame=motion_frame)
             else:
-                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[0], self.src_infos[0])
-            infer_times.append(time.time() - t0)
+                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[0], self.src_infos[0], motion_frame=motion_frame)
+            # infer_times.append(time.time() - t0)
+
             dri_crop = cv2.resize(dri_crop, (512, 512))
             out_crop = np.concatenate([dri_crop, out_crop], axis=1)
             out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
