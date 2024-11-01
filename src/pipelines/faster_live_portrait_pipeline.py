@@ -359,7 +359,9 @@ class FasterLivePortraitPipeline:
         pitch, yaw, roll, t, exp, scale, kp = self.model_dict["motion_extractor"].predict(img_crop)
         motion_frame = kwargs.get("motion_frame", None)
         if motion_frame is not None:
-            pitch, yaw, roll, t, _, scale, kp = self.extract_motion(motion_frame)
+            motion_info = self.extract_motion(motion_frame)
+            if motion_info:
+                pitch, yaw, roll, t, _, scale, kp = motion_info
         
         x_d_i_info = {
             "pitch": pitch,
@@ -486,7 +488,7 @@ class FasterLivePortraitPipeline:
         if self.mot_lmk_pre is None:
             src_face = self.model_dict["face_analysis"].predict(img_bgr)
             if len(src_face) == 0:
-                return None, None, None
+                return None
             lmk = self.model_dict["landmark"].predict(img_rgb, src_face[0])
             self.mot_lmk_pre = lmk.copy()
         else:
