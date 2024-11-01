@@ -140,7 +140,10 @@ with gr.Blocks(theme=gr.themes.Soft(font=[gr.themes.GoogleFont("Plus Jakarta San
                     flag_do_crop_input = gr.Checkbox(value=True, label="do crop (source)")
                     scale = gr.Number(value=2.3, label="source crop scale", minimum=1.8, maximum=3.2, step=0.05)
                     vx_ratio = gr.Number(value=0.0, label="source crop x", minimum=-0.5, maximum=0.5, step=0.01)
-                    vy_ratio = gr.Number(value=-0.125, label="source crop y", minimum=-0.5, maximum=0.5, step=0.01)
+                    vy_ratio = gr.Number(value=0.0, label="source crop y", minimum=-0.5, maximum=0.5, step=0.01)
+            with gr.Accordion(open=True, label="Motion Video"):
+                with gr.Row():
+                    motion_video_input = gr.Video()
 
         with gr.Column():
             with gr.Accordion(open=True, label="Driving Video"):
@@ -165,7 +168,7 @@ with gr.Blocks(theme=gr.themes.Soft(font=[gr.themes.GoogleFont("Plus Jakarta San
                                                          maximum=3.2, step=0.05)
                     vx_ratio_crop_driving_video = gr.Number(value=0.0, label="driving crop x", minimum=-0.5,
                                                             maximum=0.5, step=0.01)
-                    vy_ratio_crop_driving_video = gr.Number(value=-0.1, label="driving crop y", minimum=-0.5,
+                    vy_ratio_crop_driving_video = gr.Number(value=0.0, label="driving crop y", minimum=-0.5,
                                                             maximum=0.5, step=0.01)
 
     with gr.Row():
@@ -251,6 +254,7 @@ with gr.Blocks(theme=gr.themes.Soft(font=[gr.themes.GoogleFont("Plus Jakarta San
         inputs=[
             source_image_input,
             source_video_input,
+            motion_video_input,
             driving_video_input,
             flag_relative_input,
             flag_do_crop_input,

@@ -20,8 +20,7 @@ class MediaPipeFaceModel:
             static_image_mode=True,
             max_num_faces=1,
             refine_landmarks=True,
-            min_detection_confidence=0.35,
-            min_tracking_confidence=0.35)
+            min_detection_confidence=0.5)
 
     def predict(self, *data):
         img_bgr = data[0]

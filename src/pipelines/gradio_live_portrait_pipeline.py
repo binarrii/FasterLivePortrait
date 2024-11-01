@@ -69,10 +69,10 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
             flag_is_animal=False,
             scale=2.3,
             vx_ratio=0.0,
-            vy_ratio=-0.125,
+            vy_ratio=0.0,
             scale_crop_driving_video=2.2,
             vx_ratio_crop_driving_video=0.0,
-            vy_ratio_crop_driving_video=-0.1,
+            vy_ratio_crop_driving_video=0.0,
             driving_smooth_observation_variance=1e-7,
             tab_selection=None,
     ):
@@ -155,7 +155,9 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
         motion_video_path = kwargs.get("motion_video_path", None)
         if motion_video_path:
             mcap = cv2.VideoCapture(motion_video_path)
-
+            frames_cnt = int(mcap.get(cv2.CAP_PROP_FRAME_COUNT))
+            loopback_generator = utils.loopback_generator(frames_cnt - 1)
+        
         motion_frame = None
         # infer_times = []
         for i in tqdm(range(max_frame)):
@@ -163,15 +165,21 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
             if not ret:
                 break
             if motion_video_path:
+                mcap.set(cv2.CAP_PROP_POS_FRAMES, next(loopback_generator))
                 _, motion_frame = mcap.read()
 
             # t0 = time.time()
+            first_frame = i == 0
             if self.is_source_video:
-                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[i], self.src_infos[i], motion_frame=motion_frame)
+                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[i], self.src_infos[i],
+                                                       first_frame=first_frame, motion_frame=motion_frame)
             else:
-                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[0], self.src_infos[0], motion_frame=motion_frame)
+                dri_crop, out_crop, out_org = self.run(frame, self.src_imgs[0], self.src_infos[0],
+                                                       first_frame=first_frame, motion_frame=motion_frame)
+            if out_crop is None:
+                print(f"no face in driving frame:{i}")
+                continue
             # infer_times.append(time.time() - t0)
-
             dri_crop = cv2.resize(dri_crop, (512, 512))
             out_crop = np.concatenate([dri_crop, out_crop], axis=1)
             out_crop = cv2.cvtColor(out_crop, cv2.COLOR_RGB2BGR)
@@ -182,6 +190,9 @@ class GradioLivePortraitPipeline(FasterLivePortraitPipeline):
         vcap.release()
         vout_crop.release()
         vout_org.release()
+
+        if motion_video_path:
+            mcap.release()
 
         if video_has_audio(driving_video_path):
             vsave_crop_path_new = os.path.splitext(vsave_crop_path)[0] + "-audio.mp4"

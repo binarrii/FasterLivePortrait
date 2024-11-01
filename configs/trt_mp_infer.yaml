@@ -65,7 +65,7 @@ animal_models:
     predict_type: "mp"
 
 crop_params:
-  src_dsize: 256
+  src_dsize: 512
   src_scale: 2.3
   src_vx_ratio: 0.0
   src_vy_ratio: 0.0

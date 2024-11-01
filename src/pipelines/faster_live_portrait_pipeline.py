@@ -6,27 +6,28 @@
 
 import copy
 import cv2
-import pdb
-import time
+# import pdb
+# import time
 import traceback
 
 from PIL import Image
-from torch.cuda import stream
+# from torch.cuda import stream
 from tqdm import tqdm
 import numpy as np
 import torch
-import mediapipe as mp
 
+# import mediapipe as mp
 
 from .. import models
 from ..utils.crop import crop_image, parse_bbox_from_landmark, crop_image_by_bbox, paste_back, paste_back_pytorch
 from ..utils.utils import resize_to_limit, prepare_paste_back, get_rotation_matrix, calc_lip_close_ratio, \
     calc_eye_close_ratio, transform_keypoint, concat_feat
 from src.utils import utils
+# from src.utils.detect_face import reduce_face_change
 
-from src.utils.detect_face import reduce_face_change, face_rotate_too_much
 import logging
 import av
+
 av.logging.set_level(av.logging.INFO)
 av.logging.set_libav_level(av.logging.INFO)
 logger = logging.getLogger(__file__)
@@ -35,7 +36,6 @@ class FasterLivePortraitPipeline:
     def __init__(self, cfg, **kwargs):
         self.cfg = cfg
         self.init(**kwargs)
-        self.last_out_crop = None
 
     def init(self, **kwargs):
         self.init_vars(**kwargs)
@@ -85,8 +85,11 @@ class FasterLivePortraitPipeline:
         self.mask_crop = cv2.imread(self.cfg.infer_params.mask_crop_path, cv2.IMREAD_COLOR)
         self.frame_id = 0
         self.src_lmk_pre = None
+        self.mot_lmk_pre = None
         self.R_d_0 = None
         self.x_d_0_info = None
+        self.R_d_smooth = utils.OneEuroFilter(8, 2, 2)
+        self.exp_smooth = utils.OneEuroFilter(8, 2, 2)
 
         ## 记录source的信息
         self.source_path = None
@@ -298,15 +301,6 @@ class FasterLivePortraitPipeline:
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         I_p_pstbk = torch.from_numpy(img_src).to(self.device).float()
         realtime = kwargs.get("realtime", False)
-        # faces = kwargs.get("faces", None)
-
-        # if faces is None or len(faces.detections) <= 0:
-        #     if self.last_out_crop is not None:
-        #         out_crop = copy.deepcopy(self.last_out_crop)
-        #         return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
-        #     else:
-        #         raise Exception("No face detected")
-        #     self.src_lmk_pre = None
 
         if self.cfg.infer_params.flag_crop_driving_video:
             if self.src_lmk_pre is None:
@@ -362,11 +356,10 @@ class FasterLivePortraitPipeline:
         input_eye_ratio = calc_eye_close_ratio(lmk_crop[None])
         input_lip_ratio = calc_lip_close_ratio(lmk_crop[None])
 
+        pitch, yaw, roll, t, exp, scale, kp = self.model_dict["motion_extractor"].predict(img_crop)
         motion_frame = kwargs.get("motion_frame", None)
-        if motion_frame:
-            pitch, yaw, roll, t, exp, scale, kp = self.extract_motion(motion_frame)
-        else:
-            pitch, yaw, roll, t, exp, scale, kp = self.model_dict["motion_extractor"].predict(img_crop)
+        if motion_frame is not None:
+            pitch, yaw, roll, t, _, scale, kp = self.extract_motion(motion_frame)
         
         x_d_i_info = {
             "pitch": pitch,
@@ -378,23 +371,16 @@ class FasterLivePortraitPipeline:
             "kp": kp
         }
 
-        pitch, yaw, roll = reduce_face_change(x_d_i_info)
-        #pitch, yaw, roll, face_change_exceeded = reduce_face_change(x_d_i_info)
-        #if face_change_exceeded:
-        #    out_crop = copy.deepcopy(self.last_out_crop)
-        #    return None, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
-
-        ## 这块代码会使得头部转动超过返回后，画面卡住在超过前的那一帧
-        # if face_rotate_too_much(x_d_i_info):
-        #     logger.info("face rotate too much")
-        #     out_crop = copy.deepcopy(self.last_out_crop)
-        #     return img_crop, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
+        # pitch, yaw, roll = reduce_face_change(x_d_i_info)
 
         R_d_i = get_rotation_matrix(pitch, yaw, roll)
 
-        if self.R_d_0 is None:
+        if kwargs.get("first_frame", False) or self.R_d_0 is None:
             self.R_d_0 = R_d_i.copy()
             self.x_d_0_info = copy.deepcopy(x_d_i_info)
+            # realtime smooth
+            self.R_d_smooth = utils.OneEuroFilter(8, 2, 2)
+            self.exp_smooth = utils.OneEuroFilter(8, 2, 2)
         R_d_0 = self.R_d_0.copy()
         x_d_0_info = copy.deepcopy(self.x_d_0_info)
         out_crop, out_org = None, None
@@ -402,16 +388,38 @@ class FasterLivePortraitPipeline:
             x_s_info, source_lmk, R_s, f_s, x_s, x_c_s, lip_delta_before_animation, flag_lip_zero, mask_ori_float, M = \
                 src_info[j]
             if self.cfg.infer_params.flag_relative_motion:
-                R_new = (R_d_i @ np.transpose(R_d_0, (0, 2, 1))) @ R_s
+                if self.is_source_video:
+                    if self.cfg.infer_params.flag_video_editing_head_rotation:
+                        R_new = (R_d_i @ np.transpose(R_d_0, (0, 2, 1))) @ R_s
+                        R_new = self.R_d_smooth.process(R_new)
+                    else:
+                        R_new = R_s
+                else:
+                    R_new = (R_d_i @ np.transpose(R_d_0, (0, 2, 1))) @ R_s
                 delta_new = x_s_info['exp'] + (x_d_i_info['exp'] - x_d_0_info['exp'])
-                # scale_new = x_s_info['scale'] * (x_d_i_info['scale'] / x_d_0_info['scale'])
-                scale_new = x_s_info['scale'].copy()
-                t_new = x_s_info['t'] + (x_d_i_info['t'] - x_d_0_info['t'])
+                if self.is_source_video:
+                    delta_new = self.exp_smooth.process(delta_new)
+                scale_new = x_s_info['scale'] if self.is_source_video else x_s_info['scale'] * (x_d_i_info['scale'] / x_d_0_info['scale'])
+                t_new = x_s_info['t'] if self.is_source_video else x_s_info['t'] + (x_d_i_info['t'] - x_d_0_info['t'])
             else:
-                R_new = R_d_i
+                if self.is_source_video:
+                    if self.cfg.infer_params.flag_video_editing_head_rotation:
+                        R_new = R_d_i
+                        R_new = self.R_d_smooth.process(R_new)
+                    else:
+                        R_new = R_s
+                else:
+                    R_new = R_d_i
                 delta_new = x_d_i_info['exp'].copy()
+                if self.is_source_video:
+                    delta_new = self.exp_smooth.process(delta_new)
                 scale_new = x_s_info['scale'].copy()
                 t_new = x_d_i_info['t'].copy()
+
+            # binarii: smooth >>>>>>>>
+            R_new = self.R_d_smooth.process(R_new)
+            delta_new = self.exp_smooth.process(delta_new)
+            # binarii: smooth <<<<<<<<
 
             t_new[..., 2] = 0  # zero tz
             x_d_i_new = scale_new * (x_c_s @ R_new + delta_new) + t_new
@@ -465,7 +473,7 @@ class FasterLivePortraitPipeline:
                 # I_p_pstbk = paste_back(out_crop, crop_info['M_c2o'], I_p_pstbk, mask_ori_float)
                 I_p_pstbk = paste_back_pytorch(out_crop, M, I_p_pstbk, mask_ori_float)
 
-        self.last_out_crop = copy.deepcopy(out_crop)
+        # self.last_out_crop = copy.deepcopy(out_crop)
         return img_crop, out_crop.to(dtype=torch.uint8).cpu().numpy(), I_p_pstbk.to(dtype=torch.uint8).cpu().numpy()
 
     def __del__(self):
@@ -473,12 +481,17 @@ class FasterLivePortraitPipeline:
 
 
     def extract_motion(self, img_bgr, **kwargs):
-        src_face = self.model_dict["face_analysis"].predict(img_bgr)
-        if len(src_face) == 0:
-            return None, None, None
-        
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-        lmk = self.model_dict["landmark"].predict(img_rgb, src_face[0])
+        
+        if self.mot_lmk_pre is None:
+            src_face = self.model_dict["face_analysis"].predict(img_bgr)
+            if len(src_face) == 0:
+                return None, None, None
+            lmk = self.model_dict["landmark"].predict(img_rgb, src_face[0])
+            self.mot_lmk_pre = lmk.copy()
+        else:
+            lmk = self.model_dict["landmark"].predict(img_rgb, self.mot_lmk_pre)
+            self.mot_lmk_pre = lmk.copy()
 
         ret_bbox = parse_bbox_from_landmark(
             lmk,
